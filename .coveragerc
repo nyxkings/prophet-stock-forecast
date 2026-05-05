@@ -1,0 +1,34 @@
+[run]
+source = src
+omit =
+    */site-packages/*
+    */distutils/*
+    tests/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+    if 0:
+    if False:
+    class .*\bProtocol\):
+    @(abc\.)?abstractproperty
+    if sys.version_info
+
+precision = 2
+show_missing = True
+skip_covered = False
+
+[html]
+directory = htmlcov
+
+[paths]
+source =
+    src/
+    */site-packages/src/

@@ -49,12 +49,15 @@ venv.bak/
 .ipynb_checkpoints
 *.ipynb_checkpoints/
 
-# pytest
+# pytest and testing
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
 .hypothesis/
+tests.log
+coverage.xml
 
 # mypy
 .mypy_cache/
