@@ -30,9 +30,13 @@ This document tracks the remaining work to bring the Prophet Forecasting for Por
 - [x] Created `pytest.ini` for test execution configuration
 - [x] Created `TESTING.md` documentation guide
 
-### Unit Testing Enhancements (In Progress)
-- [ ] Increase test coverage to 85%+ across all modules (currently: ?)
+### Unit Testing Enhancements (BLOCKED - Network Issues)
+- [ ] Increase test coverage to 85%+ across all modules (currently: unable to run tests)
 - [ ] Run full test suite and identify gaps
+  - **BLOCKER**: pytest collection fails due to missing dependencies (scipy, supabase, yfinance, pandas_market_calendars)
+  - **ROOT CAUSE**: Network timeouts from PyPI (files.pythonhosted.org) preventing package installation
+  - **ATTEMPTED**: Multiple pip install attempts with retries and different timeout values, all failed
+  - **STATUS**: Waiting for network stabilization or alternative installation method
 - [ ] Add missing unit tests for uncovered functions
 - [ ] Add performance/load tests for large portfolios (100+ tickers)
 
