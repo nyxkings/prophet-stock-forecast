@@ -178,4 +178,3 @@ The dashboard allows you to:
 - Track prediction accuracy metrics
 
 **Note:** The dashboard requires Supabase to be configured and populated with data from previous optimization runs.
-
