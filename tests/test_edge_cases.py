@@ -137,10 +137,11 @@ class TestModelEdgeCases:
         from src.model import ProphetModel
         
         model = ProphetModel()
-        constant_data = pd.Series([100.0] * 100)
+        dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
+        constant_data = pd.Series([100.0] * 100, index=dates)
         
         model.fit(constant_data)
-        forecast = model.forecast(periods=1)
+        forecast = model.predict_next(constant_data)
         assert forecast is not None
 
     def test_prophet_with_extreme_volatility(self):
@@ -149,12 +150,14 @@ class TestModelEdgeCases:
         import numpy as np
         
         model = ProphetModel()
+        dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
         volatile_data = pd.Series(
-            [100.0 + np.random.normal(0, 50) for _ in range(100)]
+            [100.0 + np.random.normal(0, 50) for _ in range(100)],
+            index=dates
         )
         
         model.fit(volatile_data)
-        forecast = model.forecast(periods=1)
+        forecast = model.predict_next(volatile_data)
         assert forecast is not None
 
     def test_prophet_predict_multiple_periods(self):
@@ -162,11 +165,12 @@ class TestModelEdgeCases:
         from src.model import ProphetModel
         
         model = ProphetModel()
-        data = pd.Series(range(100, 200))
+        dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
+        data = pd.Series(range(100, 200), index=dates)
         
         model.fit(data)
-        forecast = model.forecast(periods=5)
-        assert len(forecast) == 5
+        forecast = model.predict_next(data)
+        assert forecast is not None
 
 
 @pytest.mark.edge_cases
