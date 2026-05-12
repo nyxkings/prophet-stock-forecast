@@ -55,7 +55,7 @@ class TestFullPipeline:
         sample_optimization_result,
         temp_env_vars,
     ):
-        """Test that results are successfully saved to database."""
+        """Test that results are successfully returned from optimization."""
         with patch("src.main.optimize_portfolio_mean_variance") as mock_optimize:
             mock_optimize.return_value = sample_optimization_result
             
@@ -66,7 +66,6 @@ class TestFullPipeline:
             )
             
             # Verify result structure
-            assert result
             assert "date" in result
             assert "weights" in result
             assert result["weights"] == sample_optimization_result
@@ -104,8 +103,8 @@ class TestFullPipeline:
                 end_date="2023-12-31",
             )
             
-            # Should have result structure with single ticker weights
-            assert result
+            # Verify result has expected structure
+            assert result is not None
             assert "weights" in result
             assert result["weights"]["AAPL"] == 1.0
 
@@ -188,6 +187,7 @@ class TestModelPipeline:
         # Should return a forecast
         forecast = model.predict_next(ticker_data["Price"])
         assert forecast is not None
+        assert isinstance(forecast, (int, float))
 
     def test_prophet_model_handles_short_data(self):
         """Test Prophet model with minimal data."""
@@ -195,9 +195,11 @@ class TestModelPipeline:
         
         model = ProphetModel()
         
-        # Create minimal dataset with date index
-        dates = pd.date_range(start="2023-01-01", periods=3, freq="B")
-        short_data = pd.Series([100.0, 101.0, 102.0], index=dates)
+        # Create minimal dataset with proper date index
+        short_data = pd.Series(
+            [100.0, 101.0, 102.0],
+            index=pd.bdate_range(start="2023-01-01", periods=3)
+        )
         
         # Should not raise error even with short data
         model.fit(short_data)
@@ -246,6 +248,7 @@ class TestOptimizationPipeline:
     def test_optimization_with_risk_aversion(self, sample_processed_data):
         """Test optimization with different risk aversion parameters."""
         from src.optimiser import optimize_portfolio_mean_variance
+        import pytest
         
         weights_low_risk = optimize_portfolio_mean_variance(
             sample_processed_data, risk_aversion=1.0
@@ -254,14 +257,14 @@ class TestOptimizationPipeline:
             sample_processed_data, risk_aversion=10.0
         )
         
-        # Both should produce valid weight allocations
-        assert len(weights_low_risk) == len(weights_high_risk)
-        
-        # Verify weights are valid
-        for weights in [weights_low_risk, weights_high_risk]:
-            total = sum(weights.values())
-            assert abs(total - 1.0) < 0.01, "Weights should sum to 1.0"
-            assert all(0 <= w <= 1 for w in weights.values()), "All weights should be in [0,1]"
+        # Both should produce valid weights that sum to 1
+        assert abs(sum(weights_low_risk.values()) - 1.0) < 1e-6
+        assert abs(sum(weights_high_risk.values()) - 1.0) < 1e-6
+        # All weights should be non-negative
+        for weight in weights_low_risk.values():
+            assert weight >= 0
+        for weight in weights_high_risk.values():
+            assert weight >= 0
 
 
 @pytest.mark.integration

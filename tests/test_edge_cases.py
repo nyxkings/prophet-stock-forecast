@@ -137,8 +137,7 @@ class TestModelEdgeCases:
         from src.model import ProphetModel
         
         model = ProphetModel()
-        dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
-        constant_data = pd.Series([100.0] * 100, index=dates)
+        constant_data = pd.Series([100.0] * 100, index=pd.bdate_range(start="2023-01-01", periods=100))
         
         model.fit(constant_data)
         forecast = model.predict_next(constant_data)
@@ -150,10 +149,9 @@ class TestModelEdgeCases:
         import numpy as np
         
         model = ProphetModel()
-        dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
         volatile_data = pd.Series(
             [100.0 + np.random.normal(0, 50) for _ in range(100)],
-            index=dates
+            index=pd.bdate_range(start="2023-01-01", periods=100)
         )
         
         model.fit(volatile_data)
@@ -165,10 +163,10 @@ class TestModelEdgeCases:
         from src.model import ProphetModel
         
         model = ProphetModel()
-        dates = pd.date_range(start="2023-01-01", periods=100, freq="B")
-        data = pd.Series(range(100, 200), index=dates)
+        data = pd.Series(range(100, 200), index=pd.bdate_range(start="2023-01-01", periods=100))
         
         model.fit(data)
+        # Note: predict_next only predicts one period ahead
         forecast = model.predict_next(data)
         assert forecast is not None
 
