@@ -1,15 +1,20 @@
 # Deployment Guide
 
-Complete guide for deploying the Prophet Portfolio Optimization system to production.
+Complete instructions for deploying the Prophet Portfolio Optimization application to production.
+
+---
 
 ## Table of Contents
+
 1. [Prerequisites](#prerequisites)
 2. [Local Development Setup](#local-development-setup)
 3. [Hostinger VPS Deployment](#hostinger-vps-deployment)
-4. [Supabase Configuration](#supabase-configuration)
-5. [Environment Variables](#environment-variables)
-6. [Monitoring & Logs](#monitoring--logs)
-7. [Troubleshooting](#troubleshooting)
+4. [Supabase Setup](#supabase-setup)
+5. [Environment Configuration](#environment-configuration)
+6. [Running the Application](#running-the-application)
+7. [Scheduled Jobs](#scheduled-jobs)
+8. [Monitoring & Maintenance](#monitoring--maintenance)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -18,42 +23,51 @@ Complete guide for deploying the Prophet Portfolio Optimization system to produc
 ### System Requirements
 - **OS**: Linux (Ubuntu 20.04+ recommended) or macOS
 - **Python**: 3.11+
-- **Memory**: 2GB minimum
-- **Storage**: 1GB minimum
-- **Internet**: Stable connection for API calls
+- **RAM**: 2GB minimum (4GB recommended for Prophet model)
+- **Disk Space**: 500MB+ for application and dependencies
+- **Internet**: Stable connection for yfinance and Supabase access
 
-### External Services
-- **Supabase Account**: https://supabase.com (free tier suitable)
-- **GitHub Account**: For code repository
-- **Domain Name** (optional): For public deployment
+### Required Accounts
+1. **Supabase Account** (Free tier available)
+   - For database storage
+   - Sign up at https://supabase.com
+
+2. **GitHub Account** (optional but recommended)
+   - For version control
+   - Repository: https://github.com/nyxkings/prophet-stock-forecast
+
+3. **Hostinger Account** (optional)
+   - For VPS hosting
+   - Recommended for scheduled jobs
 
 ---
 
 ## Local Development Setup
 
-### 1. Clone Repository
+### Step 1: Clone Repository
 
 ```bash
 git clone https://github.com/nyxkings/prophet-stock-forecast.git
 cd prophet-stock-forecast
 ```
 
-### 2. Create Python Environment
+### Step 2: Install Python Dependencies
 
-**Using Poetry (Recommended):**
+Using Poetry (recommended):
 ```bash
-# Install Poetry
+# Install Poetry if not already installed
 curl -sSL https://install.python-poetry.org | python3 -
 
-# Create virtual environment and install dependencies
+# Install dependencies
 poetry install
 
-# Activate environment
+# Activate virtual environment
 poetry shell
 ```
 
-**Alternative - Using venv:**
+Or using pip:
 ```bash
+# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
@@ -61,385 +75,541 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Set Environment Variables
+### Step 3: Configure Environment Variables
 
 Create `.env` file in project root:
 ```bash
-cat > .env << EOF
+# Supabase Configuration
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-anon-key
-EOF
+
+# Optional: Portfolio Configuration
+PORTFOLIO_TICKERS=AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,JPM,JNJ,V,WMT,XOM
+RISK_AVERSION=5
+MINIMUM_ALLOCATION=0.05
+MAXIMUM_ALLOCATION=1.0
+START_DATE=2024-01-01
+END_DATE=2024-12-31
 ```
 
-### 4. Run Locally
-
-**Single Optimization Run:**
-```bash
-python -c "from src.main import run_optimisation; print(run_optimisation(['AAPL', 'MSFT'], '2024-01-01', '2024-05-06'))"
-```
-
-**Start Dashboard:**
-```bash
-streamlit run src/streamlit_app.py
-```
-
-### 5. Run Tests
+### Step 4: Run Tests
 
 ```bash
-# All tests
+# Run all tests
 pytest tests/ -v
 
-# With coverage
-pytest tests/ --cov=src --cov-report=html
+# Run with coverage
+pytest tests/ -v --cov=src --cov-report=html
 
-# Specific test file
+# Run specific test file
 pytest tests/test_model.py -v
+```
+
+### Step 5: Run Application
+
+```bash
+# One-time optimization run
+python -c "
+from src.main import run_optimisation
+from src.database import save_results_to_supabase
+
+result = run_optimisation(['AAPL', 'MSFT', 'GOOGL'], '2024-01-01', '2024-12-31')
+if result:
+    save_results_to_supabase(result)
+    print('Optimization complete!')
+"
+
+# Run Streamlit dashboard
+streamlit run src/streamlit_app.py
 ```
 
 ---
 
 ## Hostinger VPS Deployment
 
-### 1. VPS Setup
+### Step 1: VPS Setup on Hostinger
 
-**At Hostinger Dashboard:**
-1. Create Ubuntu 20.04 LTS VPS (2GB RAM recommended)
-2. Enable SSH access
-3. Get root credentials
+1. **Create VPS Instance**
+   - Log in to Hostinger Control Panel
+   - Click "VPS Hosting" → "Create VPS"
+   - Choose: Ubuntu 20.04 LTS, 2GB RAM, 50GB SSD
+   - Note the IP address and root password
 
-### 2. Initial Server Configuration
+2. **Connect via SSH**
+   ```bash
+   ssh root@YOUR_VPS_IP
+   # Enter password when prompted
+   ```
 
+3. **Initial System Setup**
+   ```bash
+   # Update system
+   apt update && apt upgrade -y
+   
+   # Install essential tools
+   apt install -y python3.11 python3.11-venv python3-pip git curl
+   
+   # Create non-root user
+   useradd -m -s /bin/bash prophet
+   usermod -aG sudo prophet
+   su - prophet
+   ```
+
+### Step 2: Application Deployment
+
+1. **Clone Repository**
+   ```bash
+   cd ~
+   git clone https://github.com/nyxkings/prophet-stock-forecast.git
+   cd prophet-stock-forecast
+   ```
+
+2. **Setup Virtual Environment**
+   ```bash
+   python3.11 -m venv venv
+   source venv/bin/activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
+
+3. **Create Environment File**
+   ```bash
+   nano .env
+   ```
+   
+   Add configuration:
+   ```
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_KEY=your-anon-key
+   ```
+   
+   Save with Ctrl+O, Enter, Ctrl+X
+
+### Step 3: Systemd Service Setup
+
+Create service file:
 ```bash
-# SSH into server
-ssh root@your_vps_ip
-
-# Update system
-apt update && apt upgrade -y
-
-# Install Python and system dependencies
-apt install -y python3.11 python3.11-venv python3.11-dev
-apt install -y pip git curl wget
-apt install -y build-essential libssl-dev libffi-dev
-```
-
-### 3. Clone Repository
-
-```bash
-# Create app directory
-mkdir -p /var/www/portfolio-app
-cd /var/www/portfolio-app
-
-# Clone repository
-git clone https://github.com/nyxkings/prophet-stock-forecast.git .
-```
-
-### 4. Setup Python Environment
-
-```bash
-# Create virtual environment
-python3.11 -m venv venv
-
-# Activate environment
-source venv/bin/activate
-
-# Install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 5. Configure Environment Variables
-
-```bash
-# Create .env file
-nano .env
-```
-
-**Contents:**
-```
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key
-PYTHONUNBUFFERED=1
-```
-
-Save with `Ctrl+X`, then `Y`, then `Enter`.
-
-### 6. Setup Systemd Service
-
-Create systemd service for daily execution:
-
-```bash
-sudo nano /etc/systemd/system/portfolio-optimization.service
-```
-
-**Contents:**
-```ini
+sudo tee /etc/systemd/system/prophet-optimization.service > /dev/null <<EOF
 [Unit]
 Description=Prophet Portfolio Optimization
 After=network.target
 
 [Service]
-Type=oneshot
-User=www-data
-Group=www-data
-WorkingDirectory=/var/www/portfolio-app
-Environment="PATH=/var/www/portfolio-app/venv/bin"
-ExecStart=/var/www/portfolio-app/venv/bin/python -c "from src.main import run_optimisation; run_optimisation(['AAPL','MSFT','GOOGL','AMZN','TSLA','NVDA','META','NVIDIA','BERKB','JPM','JNJ','V'], '2024-01-01', '2024-05-07')"
-StandardOutput=journal
-StandardError=journal
+User=prophet
+WorkingDirectory=/home/prophet/prophet-stock-forecast
+Environment="PATH=/home/prophet/prophet-stock-forecast/venv/bin"
+ExecStart=/home/prophet/prophet-stock-forecast/venv/bin/python -m src.main
+Restart=on-failure
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
 
-### 7. Setup Cron Job for Daily Execution
+Enable service:
+```bash
+sudo systemctl enable prophet-optimization
+sudo systemctl start prophet-optimization
+```
+
+### Step 4: Scheduled Daily Runs
+
+Install and configure cron:
 
 ```bash
 # Edit crontab
-sudo crontab -e
+crontab -e
 
-# Add this line (runs every day at 9:00 AM UTC)
-0 9 * * * cd /var/www/portfolio-app && source venv/bin/activate && python -c "from src.main import run_optimisation; run_optimisation(['AAPL','MSFT','GOOGL','AMZN','TSLA','NVDA','META','NVIDIA','BERKB','JPM','JNJ','V'], '2024-01-01', '2024-05-07')" >> /var/log/portfolio-optimization.log 2>&1
+# Add daily run at 9am UTC
+0 9 * * * cd /home/prophet/prophet-stock-forecast && source venv/bin/activate && python -m src.main >> /tmp/prophet.log 2>&1
 ```
 
-### 8. Deploy Streamlit Dashboard
-
-**Install Nginx as Reverse Proxy:**
-```bash
-sudo apt install -y nginx
-
-# Create Nginx config
-sudo nano /etc/nginx/sites-available/portfolio
-```
-
-**Contents:**
-```nginx
-upstream streamlit {
-    server localhost:8501;
-}
-
-server {
-    listen 80;
-    server_name your_domain.com;
-
-    location / {
-        proxy_pass http://streamlit;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Enable config:
-```bash
-sudo ln -s /etc/nginx/sites-available/portfolio /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
-**Create Systemd Service for Streamlit:**
+Or use systemd timer:
 
 ```bash
-sudo nano /etc/systemd/system/streamlit-portfolio.service
-```
-
-**Contents:**
-```ini
+sudo tee /etc/systemd/system/prophet-optimization.timer > /dev/null <<EOF
 [Unit]
-Description=Streamlit Portfolio Dashboard
+Description=Prophet Portfolio Optimization Daily Timer
+Requires=prophet-optimization.service
+
+[Timer]
+OnCalendar=*-*-* 09:00:00
+Unit=prophet-optimization.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+sudo systemctl enable prophet-optimization.timer
+sudo systemctl start prophet-optimization.timer
+```
+
+### Step 5: Setup Streamlit Dashboard (Optional)
+
+Install additional dependencies:
+```bash
+pip install streamlit
+```
+
+Create systemd service for dashboard:
+```bash
+sudo tee /etc/systemd/system/prophet-dashboard.service > /dev/null <<EOF
+[Unit]
+Description=Prophet Dashboard
 After=network.target
 
 [Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/var/www/portfolio-app
-Environment="PATH=/var/www/portfolio-app/venv/bin"
-ExecStart=/var/www/portfolio-app/venv/bin/streamlit run src/streamlit_app.py --server.port 8501 --server.address 127.0.0.1
+User=prophet
+WorkingDirectory=/home/prophet/prophet-stock-forecast
+Environment="PATH=/home/prophet/prophet-stock-forecast/venv/bin"
+ExecStart=/home/prophet/prophet-stock-forecast/venv/bin/streamlit run src/streamlit_app.py --server.port=8501
 Restart=always
-RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable prophet-dashboard
+sudo systemctl start prophet-dashboard
 ```
 
-Enable and start:
-```bash
-sudo systemctl enable streamlit-portfolio
-sudo systemctl start streamlit-portfolio
+Access dashboard:
 ```
-
-### 9. SSL Certificate (Let's Encrypt)
-
-```bash
-# Install Certbot
-sudo apt install -y certbot python3-certbot-nginx
-
-# Generate certificate (replace with your domain)
-sudo certbot certonly --nginx -d your_domain.com
-
-# Auto-renewal
-sudo systemctl enable certbot.timer
+http://YOUR_VPS_IP:8501
 ```
-
-Update Nginx config to use HTTPS and redirect HTTP to HTTPS.
 
 ---
 
-## Supabase Configuration
+## Supabase Setup
 
-### 1. Create Project
+### Step 1: Create Supabase Account
 
 1. Visit https://supabase.com
-2. Sign up or log in
-3. Create new project
-4. Wait for project initialization (~5 minutes)
+2. Sign up with email or GitHub account
+3. Create a new organization and project
 
-### 2. Create Database Table
+### Step 2: Get API Credentials
 
-**SQL Editor:**
+1. Go to Project Settings → API
+2. Copy:
+   - Project URL → `SUPABASE_URL`
+   - Anon Key → `SUPABASE_KEY`
+
+### Step 3: Create Database Table
+
+In Supabase SQL Editor, run:
+
 ```sql
--- Table for storing optimization results
-CREATE TABLE stock_optimisation_store (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    date DATE NOT NULL,
-    ticker TEXT NOT NULL,
-    predicted_price FLOAT NOT NULL,
-    predicted_return FLOAT NOT NULL,
-    weight FLOAT NOT NULL,
-    actual_prices_last_month JSONB,
-    metadata JSONB DEFAULT NULL,
-    UNIQUE(date, ticker)
+-- Create table for storing optimization results
+CREATE TABLE IF NOT EXISTS stock_optimisation_store (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  run_date DATE NOT NULL,
+  ticker TEXT NOT NULL,
+  predicted_price DECIMAL NOT NULL,
+  predicted_return DECIMAL NOT NULL,
+  optimal_weight DECIMAL NOT NULL,
+  recent_prices JSONB DEFAULT NULL,
+  
+  UNIQUE(run_date, ticker)
 );
 
--- Index for faster queries
-CREATE INDEX idx_date ON stock_optimisation_store(date);
+-- Create index for faster queries
+CREATE INDEX idx_run_date ON stock_optimisation_store(run_date DESC);
 CREATE INDEX idx_ticker ON stock_optimisation_store(ticker);
-```
 
-### 3. Get API Keys
-
-**In Supabase Dashboard:**
-1. Navigate to "Settings" → "API"
-2. Copy: `Project URL` → `SUPABASE_URL`
-3. Copy: `anon public` key → `SUPABASE_KEY`
-
-### 4. Row Level Security (RLS)
-
-For public read access:
-```sql
+-- Enable Row Level Security
 ALTER TABLE stock_optimisation_store ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read"
-    ON stock_optimisation_store FOR SELECT
-    USING (true);
+-- Create policy for public read access
+CREATE POLICY "Enable read access for all users"
+  ON stock_optimisation_store
+  FOR SELECT
+  USING (true);
 
-CREATE POLICY "Allow service role insert"
-    ON stock_optimisation_store FOR INSERT
-    WITH CHECK (true);
+-- Create policy for insert access (for our app)
+CREATE POLICY "Enable insert access for service role"
+  ON stock_optimisation_store
+  FOR INSERT
+  WITH CHECK (true);
+```
+
+### Step 4: Verify Connection
+
+Test from local machine:
+```python
+from src.database import get_supabase_client
+
+client = get_supabase_client()
+if client:
+    result = client.table('stock_optimisation_store').select('*').limit(1).execute()
+    print("✅ Connected to Supabase!")
+    print(f"Found {len(result.data)} records")
+else:
+    print("❌ Failed to connect - check credentials")
 ```
 
 ---
 
-## Environment Variables
+## Environment Configuration
 
-Required environment variables for all deployments:
+### Environment Variables
+
+Create `.env` file:
 
 ```bash
 # Required: Supabase credentials
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key
+SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
-# Optional: Python settings
-PYTHONUNBUFFERED=1      # Immediate output (useful for logging)
-PYTHONDONTWRITEBYTECODE=1  # Don't create __pycache__
+# Optional: Portfolio configuration
+# Default: AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, JPM, JNJ, V, WMT, XOM
+PORTFOLIO_TICKERS=AAPL,MSFT,GOOGL
 
-# Optional: Application settings
-PORTFOLIO_TICKERS=AAPL,MSFT,GOOGL,AMZN  # Comma-separated
-RISK_AVERSION=5.0
-MIN_ALLOCATION=0.05
-MAX_ALLOCATION=1.0
+# Optional: Optimization parameters
+RISK_AVERSION=5              # Risk aversion coefficient (1-10)
+MINIMUM_ALLOCATION=0.05      # 5% minimum per asset
+MAXIMUM_ALLOCATION=1.0       # 100% maximum per asset
+
+# Optional: Date range for analysis
+START_DATE=2024-01-01
+END_DATE=2024-12-31
 ```
 
-### Setting Variables
+### Loading Environment Variables
 
-**On VPS:**
-```bash
-# Add to /etc/environment
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key
+Application automatically loads from `.env` file using `python-dotenv`:
+
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+supabase_url = os.getenv('SUPABASE_URL')
+supabase_key = os.getenv('SUPABASE_KEY')
 ```
-
-**In Cron Job:**
-Include in crontab (as shown in Cron Job section)
-
-**For Systemd Service:**
-Use `Environment=KEY=VALUE` in service file
 
 ---
 
-## Monitoring & Logs
+## Running the Application
 
-### View Logs
+### Standalone Script
 
-**Systemd Service:**
 ```bash
-# Real-time logs
-sudo journalctl -u portfolio-optimization.service -f
+# Activate virtual environment
+source venv/bin/activate
 
-# Last 50 lines
-sudo journalctl -u portfolio-optimization.service -n 50
+# Run optimization
+python -m src.main
+
+# With custom parameters
+python -c "
+from src.main import run_optimisation
+result = run_optimisation(
+    ['AAPL', 'MSFT'],
+    '2024-01-01',
+    '2024-12-31'
+)
+print(result)
+"
 ```
 
-**Cron Logs:**
-```bash
-# View cron log
-tail -f /var/log/portfolio-optimization.log
+### With Docker (Optional)
+
+Create `Dockerfile`:
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+# Copy application
+COPY . /app
+
+# Install Python dependencies
+RUN pip install -r requirements.txt
+
+# Run application
+CMD ["python", "-m", "src.main"]
 ```
 
-**Application Logs:**
+Build and run:
 ```bash
-# Check VPS server logs
-tail -f /var/log/syslog
+# Build image
+docker build -t prophet-optimization .
+
+# Run container
+docker run -e SUPABASE_URL="..." -e SUPABASE_KEY="..." prophet-optimization
+
+# Or with env file
+docker run --env-file .env prophet-optimization
 ```
 
-### Monitoring Dashboard
+---
 
-Visit deployed Streamlit app to see:
-- Latest optimization results
-- Historical predictions vs actual prices
-- Portfolio weight evolution
-- Performance metrics
+## Scheduled Jobs
+
+### Daily Optimization Cron
+
+Run optimization every day at 9am UTC:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line
+0 9 * * * cd /path/to/prophet-stock-forecast && source venv/bin/activate && python -m src.main >> /tmp/prophet.log 2>&1
+```
+
+### Monitoring Cron Execution
+
+```bash
+# View cron logs
+sudo tail -f /var/log/syslog | grep CRON
+
+# View application logs
+tail -f /tmp/prophet.log
+```
+
+### Advanced Scheduling with APScheduler
+
+Create `scheduler.py`:
+```python
+from apscheduler.schedulers.blocking import BlockingScheduler
+from src.main import run_optimisation
+from src.database import save_results_to_supabase
+
+scheduler = BlockingScheduler()
+
+@scheduler.scheduled_job('cron', hour=9, minute=0)
+def daily_optimization():
+    print("Starting daily optimization...")
+    result = run_optimisation(
+        ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META'],
+        '2024-01-01',
+        '2024-12-31'
+    )
+    if result:
+        save_results_to_supabase(result)
+        print("✅ Optimization completed and saved")
+    else:
+        print("❌ Optimization failed")
+
+if __name__ == '__main__':
+    scheduler.start()
+```
+
+Run:
+```bash
+python scheduler.py
+```
+
+---
+
+## Monitoring & Maintenance
 
 ### Health Checks
 
-Create health check script:
-```bash
-#!/bin/bash
-# /var/www/portfolio-app/health_check.sh
+Create `health_check.py`:
+```python
+import sys
+from src.database import get_supabase_client
 
-cd /var/www/portfolio-app
-source venv/bin/activate
+def check_database():
+    """Verify database connectivity"""
+    try:
+        client = get_supabase_client()
+        if not client:
+            return False, "Credentials not configured"
+        
+        result = client.table('stock_optimisation_store').select('count').eq('count', 'exact').execute()
+        return True, "Database connected"
+    except Exception as e:
+        return False, str(e)
 
-# Test imports
-python -c "from src.main import run_optimisation; print('OK')" || exit 1
+def check_recent_results():
+    """Check if recent optimization results exist"""
+    try:
+        client = get_supabase_client()
+        if not client:
+            return False, "Cannot connect to database"
+        
+        result = client.table('stock_optimisation_store').select('run_date').order('run_date', desc=True).limit(1).execute()
+        
+        if result.data:
+            last_run = result.data[0]['run_date']
+            return True, f"Last run: {last_run}"
+        else:
+            return False, "No results found in database"
+    except Exception as e:
+        return False, str(e)
 
-# Check Supabase connection
-python -c "from src.database import get_supabase_client; get_supabase_client(); print('OK')" || exit 1
-
-echo "Health check passed"
+if __name__ == '__main__':
+    db_ok, db_msg = check_database()
+    results_ok, results_msg = check_recent_results()
+    
+    print(f"🗄️  Database: {'✅' if db_ok else '❌'} {db_msg}")
+    print(f"📊 Results: {'✅' if results_ok else '❌'} {results_msg}")
+    
+    sys.exit(0 if (db_ok and results_ok) else 1)
 ```
 
-Run periodically:
+Run health check:
 ```bash
-# Add to crontab (check every hour)
-0 * * * * /var/www/portfolio-app/health_check.sh >> /var/log/health-check.log 2>&1
+python health_check.py
 ```
+
+### Log Monitoring
+
+View application logs:
+```bash
+# Recent logs
+tail -100 /tmp/prophet.log
+
+# Follow live logs
+tail -f /tmp/prophet.log
+
+# Search for errors
+grep ERROR /tmp/prophet.log
+
+# Get statistics
+wc -l /tmp/prophet.log  # Total lines
+grep "completed" /tmp/prophet.log | wc -l  # Successful runs
+```
+
+### Database Backup
+
+Export data:
+```bash
+# From Supabase dashboard
+1. Go to "Backups" tab
+2. Create manual backup
+3. Or use Supabase CLI:
+
+supabase db pull  # Pull database schema
+```
+
+### Performance Optimization
+
+1. **Prophet Model Tuning**
+   - Adjust `changepoint_prior_scale` for sensitivity
+   - Modify `seasonality_mode` (additive/multiplicative)
+   - See `src/settings.py`
+
+2. **Optimization Tuning**
+   - Adjust `risk_aversion` parameter (1-10)
+   - Modify allocation constraints
+   - See `src/settings.py`
+
+3. **Memory Management**
+   - Prophet can use significant RAM for large datasets
+   - Monitor with `top` or `htop`
+   - Reduce date range if needed
 
 ---
 
@@ -447,187 +617,118 @@ Run periodically:
 
 ### Common Issues
 
-#### 1. **ModuleNotFoundError: No module named 'prophet'**
-
-**Cause:** Dependencies not installed
+#### Issue: "No module named 'prophet'"
 
 **Solution:**
 ```bash
+# Activate venv
 source venv/bin/activate
-pip install prophet
+
+# Reinstall
+pip install prophet --no-cache-dir
 ```
 
-#### 2. **Connection refused when accessing dashboard**
-
-**Cause:** Streamlit service not running
+#### Issue: "SUPABASE_URL or SUPABASE_KEY not found"
 
 **Solution:**
 ```bash
-sudo systemctl status streamlit-portfolio
-sudo systemctl start streamlit-portfolio
+# Check .env file exists
+ls -la .env
+
+# Add missing variables
+echo "SUPABASE_URL=your_url" >> .env
+echo "SUPABASE_KEY=your_key" >> .env
+
+# Verify environment
+python -c "import os; print(os.getenv('SUPABASE_URL'))"
 ```
 
-#### 3. **Supabase connection errors**
-
-**Cause:** Missing or incorrect credentials
+#### Issue: "Connection timeout to yfinance"
 
 **Solution:**
 ```bash
-# Verify environment variables
-echo $SUPABASE_URL
-echo $SUPABASE_KEY
+# Test connectivity
+python -c "import yfinance as yf; print(yf.Ticker('AAPL').history(period='1d'))"
 
-# Test connection
-python -c "from src.database import get_supabase_client; get_supabase_client()"
+# Use retry logic
+pip install retry
+
+# Check network
+ping google.com
+curl -I https://query1.finance.yahoo.com
 ```
 
-#### 4. **yfinance data not fetching**
-
-**Cause:** Network issue or API rate limit
+#### Issue: "Permission denied" when starting service
 
 **Solution:**
 ```bash
-# Test yfinance
-python -c "import yfinance as yf; print(yf.Ticker('AAPL').history(period='1y').head())"
+# Fix file ownership
+sudo chown -R prophet:prophet /home/prophet/prophet-stock-forecast
 
-# Add delay between requests
-time.sleep(1)  # in code
+# Set correct permissions
+sudo chmod -R 755 /home/prophet/prophet-stock-forecast
 ```
 
-#### 5. **Out of memory errors**
-
-**Cause:** Large portfolio or insufficient RAM
+#### Issue: "OutOfMemory" during Prophet fitting
 
 **Solution:**
-- Reduce portfolio size
-- Upgrade VPS RAM (Hostinger allows easy upgrades)
-- Optimize Prophet model (reduce seasonality)
+```bash
+# Check available memory
+free -h
+
+# Reduce date range in config
+START_DATE=2024-06-01  # Shorter period
+
+# Or reduce number of tickers
+PORTFOLIO_TICKERS=AAPL,MSFT,GOOGL
+```
 
 ### Debug Mode
 
-Enable debug logging:
+Enable verbose logging:
+
 ```python
-# Add to main.py
 import logging
+
 logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+logger.debug("Debug information...")
 ```
 
-### Rollback Procedure
-
-If deployment fails:
+Or set environment variable:
 ```bash
-# Revert to previous git commit
-cd /var/www/portfolio-app
-git log --oneline  # Find commit hash
-git checkout <commit-hash>
+export PYTHONUNBUFFERED=1
+export LOG_LEVEL=DEBUG
 
-# Restart services
-sudo systemctl restart streamlit-portfolio
-sudo systemctl restart portfolio-optimization
+python -m src.main
 ```
 
----
+### Getting Help
 
-## Performance Tuning
+1. **Check logs first**
+   ```bash
+   grep -i error /tmp/prophet.log
+   ```
 
-### For Large Portfolios (50+ tickers)
+2. **Review test cases**
+   ```bash
+   pytest tests/ -v -k "test_name"
+   ```
 
-1. **Parallel Prophet Training:**
-   - Use multiprocessing in model.py
-   - Reduces training time from O(n) to O(n/cores)
+3. **Check documentation**
+   - `API_DOCUMENTATION.md` - Function reference
+   - `TESTING.md` - Testing guide
+   - `README.md` - Quick start
 
-2. **Cache Historical Data:**
-   - Store data locally
-   - Update incrementally instead of full fetch
-
-3. **Optimize Supabase:**
-   - Use batch inserts
-   - Add database indexes
-
-### Memory Optimization
-
-```python
-# In extractor.py - process tickers one-by-one
-# Instead of loading all into memory at once
-```
-
-### Network Optimization
-
-- Use local DNS resolution
-- Cache DNS lookups
-- Use connection pooling for API calls
+4. **Report issues**
+   - GitHub Issues: https://github.com/nyxkings/prophet-stock-forecast/issues
+   - Include: Error message, logs, system info, reproduction steps
 
 ---
 
-## Backup & Recovery
+## Version Information
 
-### Database Backups
+- **Application**: Prophet Stock Forecasting v0.1.0
+- **Python**: 3.11+
+- **Last Updated**: May 2026
 
-Supabase provides automatic daily backups. Access via:
-1. Supabase Dashboard → Backups
-2. Select backup date
-3. Download or restore
-
-### Code Backups
-
-Repository is version controlled on GitHub. Restore with:
-```bash
-git clone https://github.com/nyxkings/prophet-stock-forecast.git
-```
-
-### Configuration Backups
-
-Store `.env` file in secure location (not in git):
-```bash
-# Backup locally
-scp root@vps_ip:/var/www/portfolio-app/.env ./backup/.env
-```
-
----
-
-## Cost Estimation
-
-### VPS (Hostinger)
-- Small VPS: $3.99/month
-- 2GB RAM, 50GB SSD
-- Sufficient for 12+ ticker portfolio
-
-### Supabase
-- Free tier: Suitable for development
-- Pro tier: $25/month for production
-- Includes 500GB database storage
-
-### Domain (optional)
-- .com domain: $10-15/year
-
-### Total
-- **Minimal Setup**: ~$10/month (VPS + free Supabase)
-- **Production Setup**: ~$40-50/month
-
----
-
-## Scaling Considerations
-
-### Current Limits
-- Up to 50 tickers per optimization
-- Completes in 30-60 seconds
-- Supabase free tier: 100,000 rows/month
-
-### For Higher Scale
-- Use serverless functions (AWS Lambda, Google Cloud Functions)
-- Implement caching layer (Redis)
-- Use dedicated ML inference service (SageMaker)
-
----
-
-## See Also
-
-- [API Documentation](API.md)
-- [Architecture Documentation](ARCHITECTURE.md)
-- [Testing Guide](TESTING.md)
-- [User Guide](USER_GUIDE.md)
-
----
-
-**Last Updated**: May 7, 2024
-**Tested With**: Ubuntu 20.04 LTS, Python 3.11, Supabase

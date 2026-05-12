@@ -1,452 +1,923 @@
-# Architecture & Design Documentation
+# Architecture Documentation
 
-This document describes the system architecture, design decisions, and component interactions for the Prophet Portfolio Optimization system.
+Technical design and architecture of the Prophet Portfolio Optimization system.
+
+---
+
+## Table of Contents
+
+1. [System Overview](#system-overview)
+2. [Component Architecture](#component-architecture)
+3. [Data Flow](#data-flow)
+4. [Module Descriptions](#module-descriptions)
+5. [Technology Stack](#technology-stack)
+6. [Design Decisions](#design-decisions)
+7. [Scalability & Performance](#scalability--performance)
+8. [Error Handling & Reliability](#error-handling--reliability)
+
+---
 
 ## System Overview
 
+### High-Level Architecture
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Main Pipeline (main.py)                     │
-└────────────┬────────────────────────────────────────────────────┘
-             │
-             ├──► Data Layer (extractor.py)
-             │    └─► yfinance API
-             │
-             ├──► Processing Layer (processor.py)
-             │    └─► Data alignment & preprocessing
-             │
-             ├──► ML Layer (model.py)
-             │    └─► Prophet forecasting
-             │
-             ├──► Optimization Layer (optimiser.py)
-             │    └─► Markowitz portfolio optimization
-             │
-             └──► Persistence Layer (database.py)
-                  └─► Supabase database
+┌─────────────────────────────────────────────────────────────┐
+│                     User/Scheduler                          │
+│         (Cron Job / Manual Execution / API Call)            │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+         ┌────────────────┐
+         │ Main Orchestr. │
+         │  (main.py)     │
+         └────────────────┘
+                  │
+       ┌──────────┼──────────┐
+       │          │          │
+       ▼          ▼          ▼
+    ┌────────┐  ┌──────────┐  ┌────────────┐
+    │Extract │  │Processor │  │   Model    │
+    │ (yf)   │  │(alignment)│  │ (Prophet)  │
+    └────────┘  └──────────┘  └────────────┘
+       │          │          │
+       └──────────┼──────────┘
+                  │
+                  ▼
+         ┌────────────────┐
+         │   Optimiser    │
+         │  (Markowitz)   │
+         └────────────────┘
+                  │
+                  ▼
+         ┌────────────────┐
+         │   Database     │
+         │  (Supabase)    │
+         └────────────────┘
 ```
+
+### Key Characteristics
+
+- **Modular**: Each component has single responsibility
+- **Data-driven**: All decisions based on predictions and optimization
+- **Batch-oriented**: Runs once daily, not real-time
+- **Fault-tolerant**: Graceful degradation if components fail
+- **Observable**: Comprehensive logging throughout
 
 ---
 
 ## Component Architecture
 
-### 1. Data Extraction Layer (`src/extractor.py`)
+### 1. Extraction Layer
 
-**Purpose**: Fetch historical OHLCV data from external sources.
+**Purpose:** Fetch raw market data from Yahoo Finance
 
-**Key Components:**
-- `extract_data()`: Main function using yfinance library
-- `_extract_single_ticker_data()`: Single ticker extraction
-- `_process_ticker_dataframe()`: Data cleaning and validation
+**Components:**
+- `src/extractor.py`
+- `yfinance` library
+- Network connection to Yahoo Finance
 
-**Design Decisions:**
-- **yfinance**: Chosen for reliable, free access to stock data
-- **Error Handling**: Gracefully handles missing data for specific tickers
-- **Caching**: Each extraction is fresh (no caching) to ensure current data
+**Responsibilities:**
+- Download historical OHLCV data
+- Validate data quality
+- Handle missing tickers gracefully
+- Calculate daily returns
 
-**Data Flow:**
-```
-Ticker → yfinance.Ticker() → OHLCV data → DataFrame → Clean & validate
-```
+**Input:** Ticker symbols, date range
 
-**Performance:**
-- ~3-5 seconds per ticker
-- Scales linearly with number of tickers
-- ~60 seconds for 12-ticker portfolio
+**Output:** Dictionary of DataFrames with Price and Returns columns
+
+### 2. Processing Layer
+
+**Purpose:** Prepare data for modeling and optimization
+
+**Components:**
+- `src/processor.py`
+- pandas for data manipulation
+- numpy for numerical operations
+
+**Responsibilities:**
+- Align data across multiple assets
+- Handle missing/misaligned dates
+- Calculate additional features (if needed)
+- Prepare data for next steps
+
+**Input:** Raw extracted data
+
+**Output:** Aligned portfolio data ready for modeling
+
+### 3. Modeling Layer
+
+**Purpose:** Generate price predictions using time series forecasting
+
+**Components:**
+- `src/model.py`
+- Facebook Prophet library
+- pandas_market_calendars for holidays
+- cmdstanpy for statistical inference
+
+**Responsibilities:**
+- Fit Prophet model to historical prices
+- Incorporate US trading holidays
+- Generate next-day price predictions
+- Calculate predicted returns
+
+**Input:** Aligned price series with datetime index
+
+**Output:** Predicted prices and returns for each asset
+
+### 4. Optimization Layer
+
+**Purpose:** Calculate optimal portfolio weights
+
+**Components:**
+- `src/optimiser.py`
+- scipy for constrained optimization
+- numpy for numerical computations
+
+**Responsibilities:**
+- Build covariance matrix from returns
+- Formulate optimization problem
+- Apply Markowitz mean-variance framework
+- Solve with SLSQP algorithm
+- Enforce allocation constraints
+
+**Input:** Portfolio data with predicted returns
+
+**Output:** Dictionary of optimal weights summing to 1.0
+
+### 5. Database Layer
+
+**Purpose:** Persist results for analysis and dashboard
+
+**Components:**
+- `src/database.py`
+- Supabase PostgreSQL backend
+- Python Supabase client
+
+**Responsibilities:**
+- Connect to Supabase
+- Validate results structure
+- Insert results into database
+- Handle connection failures gracefully
+
+**Input:** Optimization result dictionary
+
+**Output:** Database insertion status
+
+### 6. Orchestration Layer
+
+**Purpose:** Coordinate all components into complete pipeline
+
+**Components:**
+- `src/main.py`
+- Python logging
+- Environment configuration
+
+**Responsibilities:**
+- Load configuration
+- Coordinate sequential execution
+- Log all operations
+- Return final results
+- Handle errors gracefully
+
+**Input:** Tickers, date range
+
+**Output:** Complete optimization result or empty dict on failure
 
 ---
 
-### 2. Data Processing Layer (`src/processor.py`)
+## Data Flow
 
-**Purpose**: Align and prepare data for forecasting.
+### Complete Pipeline Flow
 
-**Key Components:**
-- `preprocess_data()`: Date alignment across all tickers
-- `append_predictions()`: Add forecast rows to historical data
-- `collect_recent_prices()`: Extract recent price windows
-
-**Design Decisions:**
-- **Common Date Alignment**: All tickers must share common trading dates (addresses weekend/holiday misalignment)
-- **Returns Calculation**: Percentage returns used for volatility estimation
-- **Missing Data**: Tickers with insufficient overlap are excluded
-
-**Data Flow:**
 ```
-Raw Multi-Ticker Data
-    ↓
-Find common trading dates
-    ↓
-Align all tickers to common dates
-    ↓
-Calculate daily returns
-    ↓
-Processed DataFrame per ticker
+1. RUN_OPTIMISATION(tickers, start_date, end_date)
+   │
+   ├─ Load Settings from src/settings.py
+   │  ├─ PORTFOLIO_TICKERS
+   │  ├─ RISK_AVERSION
+   │  ├─ PROPHET_PARAMS
+   │  └─ OPTIMIZATION_CONSTRAINTS
+   │
+   ├─ EXTRACT_DATA(tickers, start_date, end_date)
+   │  │
+   │  └─ For each ticker:
+   │     ├─ Download OHLCV from yfinance
+   │     ├─ Extract Close prices
+   │     ├─ Calculate daily returns
+   │     └─ Validate data quality
+   │
+   ├─ PREPROCESS_DATA(extracted_data)
+   │  │
+   │  ├─ Find common trading dates
+   │  ├─ Align all DataFrames to common dates
+   │  └─ Create aligned portfolio dict
+   │
+   ├─ ProphetModel.PREDICT_FOR_TICKERS(portfolio_data)
+   │  │
+   │  ├─ For each ticker:
+   │  │  ├─ Prepare data as Prophet DataFrame
+   │  │  ├─ Get trading holidays for date range
+   │  │  ├─ Fit Prophet model
+   │  │  ├─ Generate next-day forecast
+   │  │  └─ Calculate predicted return
+   │  │
+   │  └─ Collect predictions and returns dicts
+   │
+   ├─ COLLECT_RECENT_PRICES(portfolio_data, days=20)
+   │  │
+   │  └─ Extract last N trading days' prices per ticker
+   │
+   ├─ APPEND_PREDICTIONS(portfolio_data, predictions, returns)
+   │  │
+   │  └─ Add prediction row to each ticker's data
+   │
+   ├─ OPTIMIZE_PORTFOLIO(predicted_data, constraints)
+   │  │
+   │  ├─ Calculate covariance matrix
+   │  ├─ Set up objective function
+   │  ├─ Define constraints (sum=1, min/max bounds)
+   │  ├─ Solve with scipy.optimize.minimize (SLSQP)
+   │  └─ Validate solution
+   │
+   ├─ Log all results and metrics
+   │
+   ├─ SAVE_RESULTS_TO_SUPABASE(result)
+   │  │
+   │  ├─ Validate result structure
+   │  ├─ Insert row per ticker into database
+   │  └─ Handle connection failures
+   │
+   └─ RETURN result dict with:
+      ├─ date
+      ├─ predictions
+      ├─ predicted_returns
+      ├─ weights
+      └─ actual_prices_last_month
 ```
 
-**Why This Approach:**
-- Ensures fair volatility comparison across tickers
-- Handles stock splits and dividends implicitly (uses adjusted close)
-- Removes market closure gaps automatically
+### Data Structures
 
----
-
-### 3. ML/Forecasting Layer (`src/model.py`)
-
-**Purpose**: Generate one-step-ahead price predictions.
-
-**Architecture: Prophet Time Series Model**
-
-Prophet is a decomposable time series model with components:
-```
-y(t) = g(t) + s(t) + h(t) + e(t)
-
-Where:
-  g(t) = Trend (piecewise linear growth with automatic changepoints)
-  s(t) = Seasonality (yearly and weekly patterns)
-  h(t) = Holiday effects (US trading holidays)
-  e(t) = Error term
-```
-
-**Key Components:**
-- `ProphetModel` class: Wrapper around Facebook Prophet
-- `_get_us_trading_holidays()`: Integrates XNYS calendar
-- `fit()`: Model training with holiday integration
-- `predict_next()`: Single-step forecasting
-- `predict_for_tickers()`: Batch forecasting
-
-**Configuration:**
+#### Extracted Data
 ```python
-PROPHET_PARAMS = {
-    'seasonality_mode': 'multiplicative',      # For prices (not returns)
-    'changepoint_prior_scale': 0.05,          # Flexibility in trend changes
-    'seasonality_prior_scale': 10.0,          # Strength of seasonality
-    'yearly_seasonality': True,                # Annual patterns
-    'weekly_seasonality': True,                # Weekly patterns
-    'daily_seasonality': False,                # Not applicable for daily data
-    'interval_width': 0.95                     # 95% confidence intervals
+{
+    "AAPL": DataFrame(
+        index=DatetimeIndex,
+        columns=["Price", "Returns"]
+    ),
+    "MSFT": DataFrame(...)
 }
 ```
 
-**Design Decisions:**
-- **Multiplicative Seasonality**: Prices have multiplicative seasonality (e.g., 2% seasonal effect on $100 = $2, on $200 = $4)
-- **US Trading Holidays**: Accounts for market closures affecting patterns
-- **Single-Step Forecasting**: Predicts next trading day only (reduces error accumulation)
-- **No Auto-ARIMA**: Prophet handles trend/seasonality automatically, making auto-fitting unnecessary
-
-**Prediction Flow:**
+#### Processed Data
+```python
+{
+    "AAPL": DataFrame(
+        index=DatetimeIndex,  # Aligned across all tickers
+        columns=["Price", "Returns"]
+    ),
+    "MSFT": DataFrame(...)
+}
 ```
-Historical Price Series
-    ↓
-Decompose into trend + seasonality + holidays + error
-    ↓
-Fit regression model for each component
-    ↓
-Generate one-day forecast
-    ↓
-Inverse transform (yhat) to get price prediction
+
+#### Predictions
+```python
+predictions = {
+    "AAPL": 150.25,
+    "MSFT": 300.50,
+    "GOOGL": 100.75
+}
+
+predicted_returns = {
+    "AAPL": 0.015,
+    "MSFT": 0.020,
+    "GOOGL": 0.010
+}
+```
+
+#### Optimization Result
+```python
+weights = {
+    "AAPL": 0.352,
+    "MSFT": 0.421,
+    "GOOGL": 0.227
+}
+# sum(weights.values()) = 1.0
 ```
 
 ---
 
-### 4. Optimization Layer (`src/optimiser.py`)
+## Module Descriptions
 
-**Purpose**: Compute optimal portfolio allocation.
+### src/extractor.py
 
-**Markowitz Mean-Variance Optimization Problem**
+**Size:** ~31 lines
 
+**Key Functions:**
+- `extract_data()` - Main entry point
+- `_extract_single_ticker_data()` - Download single ticker
+- `_process_ticker_dataframe()` - Clean and calculate returns
+
+**Dependencies:**
+- yfinance
+- pandas
+- numpy
+
+**Design Notes:**
+- Uses yfinance for data (free, no API key required)
+- Handles missing data gracefully
+- Calculates returns as percentage change
+- Error handling for invalid tickers
+
+### src/processor.py
+
+**Size:** ~37 lines
+
+**Key Functions:**
+- `preprocess_data()` - Align data across tickers
+- `append_predictions()` - Add forecast rows
+- `collect_recent_prices()` - Extract recent history
+
+**Dependencies:**
+- pandas
+- numpy
+
+**Design Notes:**
+- Critical for handling multiple assets
+- Finds intersection of dates (common trading days)
+- Enables comparison across tickers
+- Modular design for reusability
+
+### src/model.py
+
+**Size:** ~103 lines
+
+**Key Functions:**
+- `ProphetModel.fit()` - Train on historical data
+- `ProphetModel.predict_next()` - Single prediction
+- `ProphetModel.predict_for_tickers()` - Batch predictions
+- `_get_us_trading_holidays()` - Holiday fetching
+- `_normalise_holiday_name()` - Holiday name mapping
+
+**Dependencies:**
+- prophet
+- pandas_market_calendars
+- pandas
+- numpy
+
+**Design Notes:**
+- Wraps Prophet for cleaner API
+- Automatically includes US trading holidays
+- Configurable seasonality and changepoint detection
+- Handles short data gracefully
+
+**Prophet Configuration:**
+```python
+PROPHET_PARAMS = {
+    'yearly_seasonality': True,      # Capture annual patterns
+    'weekly_seasonality': False,     # Stocks don't have weekly patterns
+    'daily_seasonality': False,      # Daily patterns weak
+    'seasonality_mode': 'multiplicative',
+    'changepoint_prior_scale': 0.05, # Sensitivity to trend changes
+    'interval_width': 0.95           # 95% confidence intervals
+}
 ```
-Maximize: μᵀw - (λ/2)(wᵀΣw)
+
+### src/optimiser.py
+
+**Size:** ~33 lines
+
+**Key Functions:**
+- `optimize_portfolio_mean_variance()` - Main optimization
+
+**Dependencies:**
+- scipy.optimize.minimize
+- numpy
+- pandas
+
+**Design Notes:**
+- Pure Markowitz mean-variance optimization
+- Uses SLSQP algorithm for constrained optimization
+- No transaction costs modeled
+- No rebalancing costs
+
+**Mathematical Formulation:**
+
+Minimize:
+```
+f(w) = -w^T * μ + (λ/2) * w^T * Σ * w
+```
 
 Subject to:
-  Σwᵢ = 1
-  wᵢ_min ≤ wᵢ ≤ wᵢ_max
-  wᵢ ≥ 0
+```
+Sum(w) = 1.0                    (Fully invested)
+min_w <= w_i <= max_w           (Allocation bounds)
 ```
 
-**Parameters:**
-- `μ`: Expected returns vector (derived from price forecasts)
-- `Σ`: Covariance matrix (estimated from historical returns)
-- `w`: Portfolio weights (optimization variables)
-- `λ`: Risk aversion parameter (higher = more conservative)
+Where:
+- `w` = weight vector
+- `μ` = expected returns (predicted returns)
+- `Σ` = return covariance matrix
+- `λ` = risk aversion parameter
 
-**Key Components:**
-- `optimize_portfolio_mean_variance()`: Main optimization function
-- Utilizes scipy.optimize.minimize with SLSQP algorithm
+### src/database.py
 
-**Design Decisions:**
-- **SLSQP Method**: Handles inequality constraints (allocation bounds)
-- **Risk Aversion Parameter**: User-configurable (default=5.0)
-  - Risk aversion = 1.0 → aggressive (emphasize returns)
-  - Risk aversion = 10.0 → conservative (emphasize stability)
-- **Covariance Estimation**: Rolling window from recent returns
-- **Allocation Constraints**: 
-  - Minimum: 5% per asset (avoid micro-allocations)
-  - Maximum: 100% per asset (long-only portfolio)
+**Size:** ~36 lines
 
-**Optimization Flow:**
-```
-Expected Returns (from Prophet)
-    ↓
-Historical Returns Covariance Matrix
-    ↓
-Formulate objective function & constraints
-    ↓
-SciPy SLSQP solver
-    ↓
-Optimal Portfolio Weights
-```
+**Key Functions:**
+- `get_supabase_client()` - Connect to database
+- `save_results_to_supabase()` - Persist results
 
-**Why This Approach:**
-- Theoretically sound (Modern Portfolio Theory)
-- Handles correlations between assets
-- Computationally efficient (milliseconds for 12+ assets)
-- Configurable risk profile
+**Dependencies:**
+- supabase-py
+- pandas
 
----
+**Design Notes:**
+- Graceful degradation if DB unavailable
+- Creates one row per ticker
+- Includes recent price history as JSON
+- Automatic UUID generation
 
-### 5. Persistence Layer (`src/database.py`)
-
-**Purpose**: Store and retrieve optimization results.
-
-**Architecture: Supabase (PostgreSQL + API)**
-
-```
-┌─────────────────┐
-│   Supabase      │
-├─────────────────┤
-│  PostgreSQL DB  │
-│   (Data Rows)   │
-├─────────────────┤
-│   REST API      │
-│  (JSON access)  │
-└─────────────────┘
-```
-
-**Database Schema:**
+**Schema:**
 ```sql
-Table: stock_optimisation_store
-├── id (UUID, Primary Key)
-├── created_at (Timestamp)
-├── date (Date)
-├── ticker (String)
-├── predicted_price (Float)
-├── predicted_return (Float)
-├── weight (Float)
-├── actual_prices_last_month (JSONB Array)
-└── metadata (JSONB, Optional)
+stock_optimisation_store (
+  id UUID PRIMARY KEY,
+  created_at TIMESTAMP,
+  run_date DATE,
+  ticker TEXT,
+  predicted_price DECIMAL,
+  predicted_return DECIMAL,
+  optimal_weight DECIMAL,
+  recent_prices JSONB
+)
 ```
 
-**Key Components:**
-- `get_supabase_client()`: Initialize authenticated client
-- `save_results_to_supabase()`: Insert results (one row per ticker)
+### src/settings.py
 
-**Design Decisions:**
-- **One Row Per Ticker**: Normalized structure for easy analysis
-- **JSONB for Prices**: Flexible storage of time series data
-- **UUID Primary Key**: Distributed system friendly
-- **Timestamp Tracking**: Automatic created_at for audit trail
+**Size:** ~10 lines
 
-**Data Flow:**
-```
-Optimization Result
-    ↓
-Transform to row-per-ticker format
-    ↓
-Insert via Supabase REST API
-    ↓
-Database acknowledgment
-```
+**Key Variables:**
+- Portfolio configuration
+- Optimization parameters
+- Prophet model parameters
+- Database settings
 
----
+**Design Notes:**
+- Single source of truth for config
+- Easy to modify without code changes
+- Supports environment variable overrides
+- Well-documented parameters
 
-### 6. Orchestration Layer (`src/main.py`)
+### src/main.py
 
-**Purpose**: Coordinate all components into a complete pipeline.
+**Size:** ~61 lines
 
-**Pipeline Flow:**
+**Key Functions:**
+- `run_optimisation()` - Main orchestration function
 
-```
-INPUT: Tickers, Date Range
-  ↓
-1. EXTRACTION (2-5 sec)
-   Extract historical data from yfinance
-  ↓
-2. PREPROCESSING (1-2 sec)
-   Align dates, calculate returns
-  ↓
-3. VALIDATION (< 1 sec)
-   Check data quality
-  ↓
-4. FORECASTING (5-10 sec)
-   Train Prophet models, generate predictions
-  ↓
-5. OPTIMIZATION (< 1 sec)
-   Solve Markowitz optimization problem
-  ↓
-6. PERSISTENCE (1-2 sec)
-   Save results to Supabase
-  ↓
-OUTPUT: Portfolio weights + predictions
-```
+**Dependencies:**
+- All other modules
+- logging
+- datetime
 
-**Total Execution Time**: ~10-20 seconds
-
-**Error Handling:**
-- Graceful degradation (continues with available tickers)
+**Design Notes:**
+- Coordinates all components
 - Comprehensive logging
-- Returns empty dict on critical failures
-
----
-
-## Data Flow Diagrams
-
-### End-to-End Pipeline
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ INPUT: tickers=['AAPL','MSFT'], dates=[2024-01-01, 2024-05-06] │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-         ┌───────────────▼────────────────┐
-         │  src.extractor.extract_data    │
-         │  (yfinance API calls)          │
-         └───────────────┬────────────────┘
-                         │
-                    Raw OHLCV Data
-                         │
-         ┌───────────────▼────────────────┐
-         │ src.processor.preprocess_data  │
-         │ (align, calculate returns)     │
-         └───────────────┬────────────────┘
-                         │
-                 Aligned Price Data
-                   + Returns Matrix
-                         │
-         ┌───────────────▼────────────────┐
-         │ src.model.predict_for_tickers  │
-         │ (Prophet forecasting)          │
-         └───────────────┬────────────────┘
-                         │
-               Predictions + Returns
-                         │
-       ┌─────────────────▼──────────────────┐
-       │ src.optimiser.optimize_portfolio   │
-       │ (Markowitz optimization)           │
-       └─────────────────┬──────────────────┘
-                         │
-                  Portfolio Weights
-                         │
-       ┌─────────────────▼──────────────────┐
-       │ src.database.save_results_to_db    │
-       │ (Supabase insertion)               │
-       └─────────────────┬──────────────────┘
-                         │
-          ┌──────────────▼──────────────┐
-          │  OUTPUT: Result Dictionary  │
-          │  - date                     │
-          │  - predictions              │
-          │  - predicted_returns        │
-          │  - weights                  │
-          │  - actual_prices_last_month │
-          └─────────────────────────────┘
-```
+- Error handling with graceful degradation
+- Returns consistent result format
 
 ---
 
 ## Technology Stack
 
-### Data & Scientific Computing
-- **pandas 3.0.2**: Data manipulation and time series handling
-- **numpy 2.4.4**: Numerical computations and arrays
-- **scipy 1.17.1**: Optimization (SLSQP solver)
+### Core Technologies
 
-### Time Series Forecasting
-- **prophet 1.3.0**: Facebook's time series library
-- **cmdstanpy 1.3.0**: Prophet's backend (Bayesian inference)
-- **pandas_market_calendars 5.3.2**: Trading calendar holidays
+| Layer | Technology | Version | Purpose |
+|-------|-----------|---------|---------|
+| **Data** | pandas | 3.0.2 | Data manipulation |
+| | numpy | 2.4.4 | Numerical operations |
+| **Modeling** | prophet | 1.3.0 | Time series forecasting |
+| | cmdstanpy | 1.3.0 | Statistical inference |
+| **Optimization** | scipy | 1.17.1 | Constrained optimization |
+| **Data Source** | yfinance | 1.3.0 | Stock prices |
+| **Database** | supabase | 2.30.0 | Results storage |
+| **Calendars** | pandas_market_calendars | 5.3.2 | Trading holidays |
+| **Python** | - | 3.12.3 | Runtime |
 
-### Data Sources & External APIs
-- **yfinance 1.3.0**: Yahoo Finance data extraction
-- **supabase 2.30.0**: Database as a service
+### Development Tools
 
-### Testing & Quality
-- **pytest 9.0.3**: Unit and integration testing
-- **pytest-cov 7.1.0**: Coverage reporting
-- **coverage 7.13.5**: Code coverage analysis
-
----
-
-## Performance Characteristics
-
-### Scaling
-- **Time Complexity**: O(n) where n = number of tickers
-- **Space Complexity**: O(n·m) where m = historical data points
-
-### Typical Timings (12-ticker portfolio)
-- Data extraction: 3-5 seconds
-- Data preprocessing: 1-2 seconds
-- Prophet model training: 5-10 seconds per ticker (parallel capable)
-- Optimization: <1 second
-- Database persistence: 1-2 seconds
-- **Total**: 15-30 seconds
-
-### Resource Usage
-- **Memory**: ~500MB for typical portfolio
-- **CPU**: Single-threaded (could parallelize Prophet training)
-- **Network**: Minor (yfinance + Supabase)
+| Tool | Purpose |
+|------|---------|
+| pytest | Testing framework |
+| pytest-cov | Coverage reporting |
+| poetry | Dependency management |
+| git | Version control |
+| streamlit | Dashboard visualization |
 
 ---
 
-## Security & Reliability
+## Design Decisions
 
-### Data Security
-- Environment variables for credentials (Supabase)
-- No credentials in code or git repository
-- SSL/TLS for all API communications
+### 1. Prophet for Time Series Forecasting
 
-### Error Resilience
-- Graceful handling of missing ticker data
-- Timeout protection on API calls
-- Validation at each pipeline stage
+**Decision:** Use Facebook Prophet instead of ARIMA/GARCH
 
-### Data Integrity
-- Transaction-like semantics (all-or-nothing per optimization run)
-- Atomic database inserts
-- Audit trail via created_at timestamps
+**Rationale:**
+- ✅ Handles holidays automatically
+- ✅ Good at capturing seasonality
+- ✅ Robust to missing data
+- ✅ Fast training (seconds vs minutes)
+- ✅ Interpretable components
+- ❌ Simpler than advanced methods
+- ❌ May miss regime changes
+
+**Alternatives Considered:**
+- ARIMA: Manual parameter tuning, slower
+- GARCH: Better volatility modeling, slower
+- LSTM: Deep learning, overkill for daily prediction
+- Random Walk: Too simple for active trading
+
+### 2. Markowitz Mean-Variance Optimization
+
+**Decision:** Classic Markowitz instead of Black-Litterman or other methods
+
+**Rationale:**
+- ✅ Simple, transparent, proven
+- ✅ Convex optimization (global optimum)
+- ✅ Fast computation
+- ✅ Interpretable weights
+- ❌ Doesn't handle rebalancing costs
+- ❌ Ignores tail risk
+- ❌ Assumes normal returns
+
+**Alternatives Considered:**
+- Black-Litterman: More complex, better for active views
+- Risk Parity: Equal risk contribution
+- Hierarchical Risk Parity: Better empirical performance
+- Kelly Criterion: Growth-focused, riskier
+
+### 3. SLSQP Optimization Algorithm
+
+**Decision:** Use scipy.optimize.minimize with SLSQP algorithm
+
+**Rationale:**
+- ✅ Handles constraints well
+- ✅ Fast convergence
+- ✅ Built-in (no extra dependencies)
+- ✅ Proven in production systems
+- ❌ Local optimization (not global)
+- ❌ Sensitive to initial guess
+
+**Alternatives Considered:**
+- CVX/CVXPY: More complex, unnecessary for convex problem
+- Genetic Algorithms: Too slow, overly complex
+- Simulated Annealing: Slower, not needed
+
+### 4. Supabase for Database
+
+**Decision:** Use Supabase (PostgreSQL) over Firebase/DynamoDB/etc
+
+**Rationale:**
+- ✅ SQL support (complex queries possible)
+- ✅ Free tier sufficient
+- ✅ Good Python library
+- ✅ Open source (PostgreSQL)
+- ❌ Requires API keys in code
+- ❌ Cold start delays
+
+**Alternatives Considered:**
+- Firebase: Real-time, but NoSQL limitations
+- DynamoDB: Serverless, but expensive at scale
+- SQLite: Local only, not multi-device
+- PostgreSQL (self-hosted): More control, ops burden
+
+### 5. Daily Batch Processing
+
+**Decision:** Run optimization once daily instead of real-time/streaming
+
+**Rationale:**
+- ✅ Stock markets closed after hours
+- ✅ No intraday price data available
+- ✅ Simpler architecture
+- ✅ Lower computational cost
+- ❌ Can't react to intraday events
+- ❌ Single daily prediction
+
+**Alternatives Considered:**
+- Real-time: Not possible without intraday data
+- Multiple daily runs: More valuable but more cost
+- Continuous streaming: Unnecessary complexity
+
+### 6. One-Step-Ahead Predictions
+
+**Decision:** Predict only next trading day instead of multiple days
+
+**Rationale:**
+- ✅ Most accurate predictions (shorter horizon)
+- ✅ Daily rebalancing possible
+- ✅ Simple and interpretable
+- ❌ Can't capture longer trends
+- ❌ More frequent rebalancing costs
+
+**Alternatives Considered:**
+- Multi-step predictions: Less accurate, harder to interpret
+- Scenario planning: Complex, less actionable
 
 ---
 
-## Future Improvements
+## Scalability & Performance
 
-### Performance Optimization
-- Parallel Prophet model training (async)
-- Caching historical data locally
-- Incremental covariance matrix updates
+### Current Performance
 
-### Robustness
-- Multi-day ahead forecasting (with uncertainty)
-- Robust optimization (mean-absolute deviation)
-- Tail risk optimization (CVaR)
+**Typical Execution Times:**
+```
+12-ticker portfolio:
+  Extract: ~2 seconds
+  Preprocess: <1 second
+  Prophet fit (per ticker): ~5 seconds → 60 sec total
+  Optimization: <1 second
+  Database: <1 second
+  TOTAL: ~65 seconds
+```
 
-### Features
-- Transaction costs modeling
-- Rebalancing frequency optimization
-- Multi-asset class support (bonds, crypto, commodities)
+**Memory Usage:**
+```
+Python process: ~200-400 MB
+Prophet model: ~100 MB per ticker
+Peak: ~1 GB for 12 tickers + Prophet models
+```
+
+### Scalability Limits
+
+**Current Bottleneck:** Prophet model fitting
+
+```
+Number of Tickers | Time (sec) | Memory (MB)
+1                 | 5          | 300
+5                 | 25         | 500
+10                | 50         | 800
+25                | 125        | 1500  ← Memory issues
+50                | 250        | 2500  ← Too slow
+100               | 500        | 5000  ← Not feasible
+```
+
+### Optimization Opportunities
+
+1. **Parallel Prophet Fitting**
+   ```python
+   from multiprocessing import Pool
+   
+   with Pool(4) as p:
+       predictions = p.map(fit_and_predict, tickers)
+   ```
+   Expected: 4x speedup for 4 cores
+
+2. **Caching**
+   ```python
+   # Cache historical data to avoid re-download
+   if data_in_cache and cache_age < 1_day:
+       data = load_from_cache()
+   else:
+       data = extract_data()
+   ```
+   Expected: 10x speedup on second run
+
+3. **Batch Optimization**
+   ```python
+   # Single optimization instead of per-ticker
+   # Current: O(n_tickers) Prophet fits
+   # Future: Single covariance + optimization
+   ```
+
+4. **GPU Acceleration**
+   ```python
+   # Use CmdStanPy GPU support
+   # Requires NVIDIA GPU + CUDA
+   ```
+
+### Recommended Limits
+
+- **Production:** 10-15 tickers (safe)
+- **Stress:** 25-30 tickers (acceptable)
+- **Breaking:** 50+ tickers (slow, memory issues)
 
 ---
 
-## Design Principles
+## Error Handling & Reliability
 
-1. **Modularity**: Each component has single responsibility
-2. **Testability**: 57+ unit and integration tests
-3. **Observability**: Comprehensive logging throughout
-4. **Configurability**: Settings exposed in `src/settings.py`
-5. **Graceful Degradation**: Continues with available data on errors
-6. **Type Safety**: Type hints throughout codebase
+### Failure Modes & Recovery
+
+#### 1. Missing Data (Ticker)
+
+**Scenario:** Yahoo Finance has no data for ticker
+
+**Handling:**
+```python
+if not data:
+    logger.warning(f"No data for {ticker}")
+    continue  # Skip this ticker
+# Process remaining tickers
+```
+
+**Result:** Partial optimization with available tickers
+
+**Example:**
+```
+Input: ['AAPL', 'INVALID', 'MSFT']
+Output: Optimizes AAPL + MSFT only
+```
+
+#### 2. Network Timeout
+
+**Scenario:** yfinance connection fails
+
+**Handling:**
+```python
+try:
+    data = yf.download(...)
+except Exception as e:
+    logger.error(f"Download failed: {e}")
+    return {}  # Empty result
+```
+
+**Result:** Returns empty dict, no crash
+
+#### 3. Model Fitting Failure
+
+**Scenario:** Prophet fails on problematic data
+
+**Handling:**
+```python
+try:
+    model.fit(series)
+except Exception as e:
+    logger.error(f"Model fit failed: {e}")
+    predictions[ticker] = None  # Mark as failed
+```
+
+**Result:** Optimization proceeds without this ticker
+
+#### 4. Database Connection
+
+**Scenario:** Supabase unavailable
+
+**Handling:**
+```python
+try:
+    save_results_to_supabase(result)
+except Exception as e:
+    logger.error(f"Database save failed: {e}")
+    # Results still returned to caller
+    return result
+```
+
+**Result:** Results still available locally, not persisted
+
+#### 5. Insufficient Data Points
+
+**Scenario:** Ticker has <20 data points
+
+**Handling:**
+```python
+if len(data) < MIN_POINTS:
+    logger.warning(f"Insufficient data: {len(data)} < {MIN_POINTS}")
+    # Prophet still fits, but less reliable
+    predictions[ticker] = model.fit(data)
+```
+
+**Result:** Still produces prediction, with warning
+
+### Reliability Features
+
+1. **Comprehensive Logging**
+   - All major operations logged
+   - Error and warning messages
+   - Execution time tracking
+
+2. **Graceful Degradation**
+   - Missing tickers → skip and continue
+   - Network issues → empty result
+   - Database down → local result only
+   - Model failures → proceed without ticker
+
+3. **Validation**
+   - Check result structure
+   - Verify weights sum to 1.0
+   - Validate date formats
+   - Check for NaN/Inf values
+
+4. **Testing**
+   - 57 test cases
+   - Unit tests for each module
+   - Integration tests for pipelines
+   - Edge case tests
+   - 58%+ code coverage
 
 ---
 
-See Also:
-- [API Documentation](API.md)
-- [Deployment Guide](DEPLOYMENT.md)
-- [Testing Guide](TESTING.md)
-- [User Guide](USER_GUIDE.md)
+## Deployment Architecture
+
+### Development
+
+```
+Local Machine
+├─ src/
+├─ tests/
+├─ venv/
+└─ .env (local credentials)
+```
+
+### Production (Hostinger VPS)
+
+```
+VPS Instance
+├─ /home/prophet/
+│  ├─ prophet-stock-forecast/
+│  │  ├─ src/
+│  │  ├─ tests/
+│  │  └─ venv/
+│  └─ .env (production credentials)
+├─ systemd services
+│  ├─ prophet-optimization (daily cron)
+│  └─ prophet-dashboard (Streamlit server)
+└─ logs
+   └─ prophet.log
+```
+
+### Data Flow (Production)
+
+```
+Cron Job (9am UTC)
+    │
+    ▼
+run_optimisation()
+    │
+    ├─→ yfinance (download)
+    ├─→ Prophet (forecasting)
+    ├─→ scipy (optimization)
+    │
+    ▼
+save_results_to_supabase()
+    │
+    ▼
+Supabase PostgreSQL
+    │
+    ▼
+Streamlit Dashboard
+(user views results)
+```
+
+---
+
+## Monitoring & Observability
+
+### Key Metrics
+
+1. **Execution Health**
+   - Execution time (target: <2 min)
+   - Success rate (target: 100%)
+   - Errors/warnings (target: 0)
+
+2. **Prediction Quality**
+   - MAPE (target: <2%)
+   - Hit rate (target: >55%)
+   - Bias (target: ~0%)
+
+3. **Portfolio Quality**
+   - Concentration (max single position)
+   - Diversification (Herfindahl index)
+   - Turnover (weight changes)
+
+4. **System Health**
+   - Database connectivity
+   - Data freshness
+   - Memory usage
+   - CPU usage
+
+### Logging
+
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/tmp/prophet.log'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
+logger.info("Starting optimization...")
+```
+
+---
+
+## Version Information
+
+- **Application**: Prophet Stock Forecasting v0.1.0
+- **Architecture Documentation**: May 2026
+- **Last Updated**: May 2026
+

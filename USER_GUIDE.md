@@ -1,529 +1,705 @@
 # User Guide
 
-Quick start guide for using the Prophet Portfolio Optimization system.
-
-## Table of Contents
-1. [Quickstart](#quickstart)
-2. [Running the Dashboard](#running-the-dashboard)
-3. [Interpreting Results](#interpreting-results)
-4. [Configuration](#configuration)
-5. [Common Scenarios](#common-scenarios)
-6. [FAQ](#faq)
+Complete guide for using the Prophet Portfolio Optimization application.
 
 ---
 
-## Quickstart
+## Table of Contents
 
-### Running a Single Optimization
+1. [Quick Start](#quick-start)
+2. [Running Optimization](#running-optimization)
+3. [Understanding Results](#understanding-results)
+4. [Configuration Guide](#configuration-guide)
+5. [Dashboard Usage](#dashboard-usage)
+6. [Portfolio Scenarios](#portfolio-scenarios)
+7. [FAQ](#faq)
 
-The simplest way to get started:
+---
+
+## Quick Start
+
+### Minimum Viable Setup (5 minutes)
+
+1. **Install dependencies**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Set Supabase credentials** (optional)
+   ```bash
+   export SUPABASE_URL="https://your-project.supabase.co"
+   export SUPABASE_KEY="your-anon-key"
+   ```
+
+3. **Run optimization**
+   ```bash
+   python -c "
+   from src.main import run_optimisation
+   
+   result = run_optimisation(
+       tickers=['AAPL', 'MSFT', 'GOOGL'],
+       start_date='2024-01-01',
+       end_date='2024-12-31'
+   )
+   
+   if result:
+       print('Optimization Results:')
+       print(f\"Date: {result['date']}\")
+       print(f\"Recommendations:\")
+       for ticker, weight in result['weights'].items():
+           print(f\"  {ticker}: {weight*100:.1f}%\")
+   "
+   ```
+
+4. **View results**
+   ```
+   Optimization Results:
+   Date: 2024-12-31
+   Recommendations:
+     AAPL: 35.2%
+     MSFT: 42.1%
+     GOOGL: 22.7%
+   ```
+
+---
+
+## Running Optimization
+
+### Basic Usage
 
 ```python
 from src.main import run_optimisation
-from datetime import datetime
+from src.database import save_results_to_supabase
 
-# Run optimization for 12 major stocks
+# Run optimization
 result = run_optimisation(
     tickers=['AAPL', 'MSFT', 'GOOGL', 'AMZN'],
-    start_date='2023-01-01',
-    end_date='2024-05-06'
+    start_date='2024-01-01',
+    end_date='2024-12-31'
 )
 
-# Results
-if result:
-    print(f"Optimization Date: {result['date']}")
-    print(f"Predicted Prices: {result['predictions']}")
-    print(f"Optimal Weights: {result['weights']}")
-else:
-    print("Optimization failed")
+# Check if successful
+if not result:
+    print("Optimization failed - no data")
+    exit(1)
+
+# Save results to database
+save_results_to_supabase(result)
+print("✅ Optimization complete and saved!")
 ```
 
-### Expected Output
+### With Custom Parameters
 
+```python
+from src.main import run_optimisation
+
+result = run_optimisation(
+    tickers=['AAPL', 'MSFT', 'GOOGL'],
+    start_date='2024-01-01',
+    end_date='2024-12-31'
+)
+
+# Configure optimization parameters
+from src.optimiser import optimize_portfolio_mean_variance
+
+optimal_weights = optimize_portfolio_mean_variance(
+    data_dict=portfolio_data,
+    minimum_allocation=0.10,  # 10% minimum per stock
+    maximum_allocation=0.35,  # 35% maximum per stock
+    risk_aversion=7.0         # Higher = more conservative
+)
 ```
-Optimization Date: 2024-05-07
-Predicted Prices: 
-  AAPL: $190.25
-  MSFT: $445.50
-  GOOGL: $165.75
-  AMZN: $185.30
 
-Optimal Weights:
-  AAPL: 25.0%
-  MSFT: 35.0%
-  GOOGL: 20.0%
-  AMZN: 20.0%
+### Handling Errors
 
-Total Portfolio Value: $100,000
-  AAPL: $25,000
-  MSFT: $35,000
-  GOOGL: $20,000
-  AMZN: $20,000
+```python
+from src.main import run_optimisation
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
+try:
+    result = run_optimisation(
+        tickers=['AAPL', 'MSFT'],
+        start_date='2024-01-01',
+        end_date='2024-12-31'
+    )
+    
+    if not result:
+        print("⚠️  No data returned - check tickers and dates")
+    else:
+        print("✅ Optimization successful")
+        print(f"Results saved for {result['date']}")
+        
+except Exception as e:
+    print(f"❌ Error: {e}")
+    logging.exception("Full traceback:")
 ```
 
 ---
 
-## Running the Dashboard
+## Understanding Results
 
-### Web Interface
+### Result Structure
 
-**Start dashboard:**
-```bash
-streamlit run src/streamlit_app.py
+```python
+{
+    "date": "2024-12-31",                           # Optimization date
+    "predictions": {                                # Next-day price predictions
+        "AAPL": 150.25,
+        "MSFT": 300.50,
+        "GOOGL": 100.75
+    },
+    "predicted_returns": {                          # Predicted returns
+        "AAPL": 0.015,  # 1.5%
+        "MSFT": 0.020,  # 2.0%
+        "GOOGL": 0.010  # 1.0%
+    },
+    "weights": {                                    # Optimal allocation
+        "AAPL": 0.35,   # 35%
+        "MSFT": 0.40,   # 40%
+        "GOOGL": 0.25   # 25%
+    },
+    "actual_prices_last_month": {                   # Recent price history
+        "AAPL": [145.0, 145.5, 146.0, ...],
+        "MSFT": [295.0, 296.0, 297.0, ...],
+        "GOOGL": [98.0, 98.5, 99.0, ...]
+    }
+}
 ```
 
-**Access in browser:**
-```
-http://localhost:8501
-```
+### Interpreting Weights
 
-### Dashboard Features
-
-#### 1. **Predictions Panel**
-Shows:
-- Next-day price predictions for each stock
-- Predicted returns (% change)
-- Confidence intervals
-
-#### 2. **Historical Comparison**
-Compares:
-- Predicted prices vs actual prices over past 30 days
-- Prediction accuracy (MAPE, RMSE)
-- Trend direction (correct/incorrect calls)
-
-#### 3. **Portfolio Allocation**
-Displays:
-- Optimal weights recommended
-- Current allocation (if previously implemented)
-- Weight changes vs previous day
-
-#### 4. **Performance Metrics**
-Shows:
-- Prediction accuracy (MAPE, MAE)
-- Portfolio volatility
-- Correlation matrix
-- Sharpe ratio (if historical data available)
-
----
-
-## Interpreting Results
-
-### Understanding Portfolio Weights
-
-**What they mean:**
-- Weight = percentage of portfolio allocated to that stock
-- Weights must sum to 100%
-- Optimize recommends rebalancing portfolio to match these weights
+**What the weights mean:**
+- Sum always equals 1.0 (100% of portfolio)
+- Each weight = recommended allocation percentage
+- Higher weight = more conviction in expected returns
 
 **Example:**
 ```
-Current Portfolio (100,000):
-  AAPL: $40,000 (40%)
-  MSFT: $30,000 (30%)
-  GOOGL: $20,000 (20%)
-  AMZN: $10,000 (10%)
+Portfolio: $100,000
 
-Optimization Recommends:
-  AAPL: 25% → Reduce to $25,000 (sell $15,000)
-  MSFT: 35% → Increase to $35,000 (buy $5,000)
-  GOOGL: 20% → Keep at $20,000 (no change)
-  AMZN: 20% → Increase to $20,000 (buy $10,000)
+Recommendations:
+  AAPL: 35.2% = $35,200
+  MSFT: 42.1% = $42,100
+  GOOGL: 22.7% = $22,700
+  Total: 100.0% = $100,000
 ```
 
 ### Interpreting Predictions
 
-**Price Predictions:**
-- Based on next trading day only
-- Uses historical trend, seasonality, holidays
-- Includes 95% confidence interval
+**Predicted Price:**
+- Model's estimate of next trading day's closing price
+- Based on historical patterns + seasonality
 
-**Return Predictions:**
-- Calculated as: (Predicted Price - Current Price) / Current Price
-- Positive = expected price increase
-- Negative = expected price decrease
+**Predicted Return:**
+- Expected percentage change next day
+- Positive = price expected to increase
+- Negative = price expected to decrease
 
-### Understanding Accuracy Metrics
-
-**MAPE (Mean Absolute Percentage Error):**
-- Measures average prediction error as percentage
-- Lower is better
-- Below 5% = excellent
-- 5-10% = good
-- Above 10% = acceptable
-
-**Sharpe Ratio:**
-- Risk-adjusted return metric
-- Higher is better (above 1.0 is good)
-- Formula: (Return - Risk-Free Rate) / Volatility
-
-**Volatility:**
-- Standard deviation of daily returns
-- Measures risk/unpredictability
-- Higher = more volatile (risky)
-
----
-
-## Configuration
-
-### Customizing Your Portfolio
-
-**Edit src/settings.py:**
-
+**Example Analysis:**
 ```python
-# Change portfolio tickers
-PORTFOLIO_TICKERS = [
-    'AAPL', 'MSFT', 'GOOGL', 'AMZN',  # Add/remove tickers
-]
+result = run_optimisation(...)
 
-# Adjust risk parameters
-RISK_AVERSION = 5.0  # 1-10 scale
-# 1.0 = aggressive (emphasize returns)
-# 5.0 = balanced
-# 10.0 = conservative (emphasize stability)
-
-# Set allocation constraints
-MINIMUM_ALLOCATION = 0.05  # Min 5% per stock
-MAXIMUM_ALLOCATION = 1.0   # Max 100% per stock
-
-# Adjust date range
-START_DATE = "2023-01-01"  # Historical data start
-```
-
-### Risk Aversion Parameter
-
-How different values affect allocation:
-
-**Low Risk Aversion (1.0) - Aggressive:**
-```
-Emphasis: Maximize Returns
-Result: Concentrated portfolio
-Example: AAPL: 60%, MSFT: 25%, GOOGL: 15%
-Risk: High volatility
-```
-
-**Medium Risk Aversion (5.0) - Balanced:**
-```
-Emphasis: Balance Returns & Risk
-Result: Moderate diversification
-Example: AAPL: 25%, MSFT: 35%, GOOGL: 20%, AMZN: 20%
-Risk: Medium volatility
-```
-
-**High Risk Aversion (10.0) - Conservative:**
-```
-Emphasis: Minimize Risk
-Result: Well-diversified portfolio
-Example: AAPL: 20%, MSFT: 25%, GOOGL: 25%, AMZN: 30%
-Risk: Low volatility
-```
-
-### Allocation Constraints
-
-**Minimum Allocation:**
-- Default: 5% per stock
-- Prevents tiny allocations
-- If you want equal weight: set to 25% for 4 stocks
-
-**Maximum Allocation:**
-- Default: 100% (can go all-in on one stock)
-- Conservative setting: 40% (max 40% in any stock)
-
----
-
-## Common Scenarios
-
-### Scenario 1: Rebuild Portfolio from Scratch
-
-```python
-from src.main import run_optimisation
-
-# Get latest recommendations
-result = run_optimisation(
-    tickers=['AAPL', 'MSFT', 'GOOGL'],
-    start_date='2024-01-01',
-    end_date='2024-05-07'
-)
-
-portfolio_value = 100_000  # $100,000 to invest
-
-for ticker, weight in result['weights'].items():
-    allocation = portfolio_value * weight
-    print(f"Buy ${allocation:,.0f} of {ticker}")
-
-# Example output:
-# Buy $25,000 of AAPL
-# Buy $35,000 of MSFT
-# Buy $40,000 of GOOGL
-```
-
-### Scenario 2: Rebalance Existing Portfolio
-
-```python
-from src.main import run_optimisation
-
-current_portfolio = {
-    'AAPL': 40_000,
-    'MSFT': 30_000,
-    'GOOGL': 30_000
-}
-
-result = run_optimisation(
-    tickers=list(current_portfolio.keys()),
-    start_date='2024-01-01',
-    end_date='2024-05-07'
-)
-
-total_value = sum(current_portfolio.values())
-
-print("Rebalancing Actions:")
-for ticker, weight in result['weights'].items():
-    target = total_value * weight
-    current = current_portfolio[ticker]
-    change = target - current
+for ticker, (price, weight) in zip(
+    result['predictions'].items(),
+    result['weights'].values()
+):
+    pred_return = result['predicted_returns'][ticker]
+    impact = weight * pred_return  # Portfolio impact of this position
     
-    if change > 0:
-        print(f"BUY ${change:,.0f} of {ticker}")
-    elif change < 0:
-        print(f"SELL ${abs(change):,.0f} of {ticker}")
-    else:
-        print(f"HOLD {ticker}")
-
-# Example output:
-# SELL $15,000 of AAPL
-# BUY $5,000 of MSFT
-# BUY $10,000 of GOOGL
+    print(f"{ticker}:")
+    print(f"  Predicted price: ${price:.2f}")
+    print(f"  Expected return: {pred_return*100:.2f}%")
+    print(f"  Allocation: {weight*100:.1f}%")
+    print(f"  Portfolio impact: {impact*100:.3f}%")
 ```
 
-### Scenario 3: Risk-Adjusted Portfolio
+---
 
+## Configuration Guide
+
+### Changing Portfolio
+
+#### Using Configuration File
+
+Edit `src/settings.py`:
+```python
+# Default portfolio
+PORTFOLIO_TICKERS = [
+    'AAPL', 'MSFT', 'GOOGL',  # Tech
+    'AMZN', 'NVDA', 'META',   # Mega-cap tech
+    'TSLA',                    # EV/Growth
+    'JPM', 'JNJ', 'V',        # Financial/Healthcare/Payments
+    'WMT', 'XOM'              # Consumer/Energy
+]
+```
+
+Change to your portfolio:
+```python
+PORTFOLIO_TICKERS = [
+    'AAPL', 'MSFT',           # Core holdings
+    'JNJ', 'XOM',             # Dividend stocks
+    'AMZN'                    # Growth
+]
+```
+
+#### Using Environment Variable
+
+```bash
+export PORTFOLIO_TICKERS="AAPL,MSFT,GOOGL,JPM,JNJ"
+```
+
+#### Runtime Configuration
+
+```python
+from src.main import run_optimisation
+
+# Custom portfolio
+my_portfolio = ['AAPL', 'MSFT', 'GOOGL', 'JPM']
+
+result = run_optimisation(
+    tickers=my_portfolio,
+    start_date='2024-01-01',
+    end_date='2024-12-31'
+)
+```
+
+### Adjusting Risk Tolerance
+
+#### Conservative Portfolio (Lower Risk)
 ```python
 from src.optimiser import optimize_portfolio_mean_variance
-from src.extractor import extract_data
-from src.processor import preprocess_data
 
-# Extract and prepare data
-raw_data = extract_data(
-    ['AAPL', 'MSFT', 'GOOGL'],
-    '2023-01-01',
-    '2024-05-07'
+weights = optimize_portfolio_mean_variance(
+    portfolio_data,
+    minimum_allocation=0.05,   # Small positions ok
+    maximum_allocation=0.20,   # No large bets
+    risk_aversion=10.0         # Very risk-averse
 )
-data = preprocess_data(raw_data)
-
-# Get different risk profiles
-conservative = optimize_portfolio_mean_variance(
-    data, risk_aversion=10.0
-)
-balanced = optimize_portfolio_mean_variance(
-    data, risk_aversion=5.0
-)
-aggressive = optimize_portfolio_mean_variance(
-    data, risk_aversion=1.0
-)
-
-print("Conservative:", conservative)
-print("Balanced:", balanced)
-print("Aggressive:", aggressive)
 ```
 
-### Scenario 4: Monitor Prediction Accuracy
+Results: Balanced allocations, small concentrated positions
+
+#### Balanced Portfolio (Medium Risk)
+```python
+weights = optimize_portfolio_mean_variance(
+    portfolio_data,
+    minimum_allocation=0.05,   # 5% minimum
+    maximum_allocation=0.50,   # 50% maximum
+    risk_aversion=5.0          # Default
+)
+```
+
+Results: Moderate allocations, some concentration allowed
+
+#### Aggressive Portfolio (Higher Risk)
+```python
+weights = optimize_portfolio_mean_variance(
+    portfolio_data,
+    minimum_allocation=0.05,   # Small positions ok
+    maximum_allocation=1.0,    # Can be 100% in one stock
+    risk_aversion=1.0          # High growth potential
+)
+```
+
+Results: Concentrated positions, high conviction
+
+#### Equally Weighted Portfolio
+```python
+from src.settings import PORTFOLIO_TICKERS
+
+equal_weights = {
+    ticker: 1.0 / len(PORTFOLIO_TICKERS)
+    for ticker in PORTFOLIO_TICKERS
+}
+```
+
+Results: Same allocation to all holdings
+
+### Adjusting Time Period
 
 ```python
 from src.main import run_optimisation
-import pandas as pd
+from datetime import date, timedelta
 
-# Historical tracking
-results_history = []
+# Last 1 year
+today = date.today()
+year_ago = today - timedelta(days=365)
 
-for month in range(1, 13):
-    result = run_optimisation(
-        tickers=['AAPL', 'MSFT', 'GOOGL'],
-        start_date=f'2023-{month:02d}-01',
-        end_date=f'2023-{month:02d}-28'
-    )
-    
-    if result:
-        results_history.append({
-            'date': result['date'],
-            'accuracy': calculate_accuracy(result)
-        })
+result = run_optimisation(
+    tickers=['AAPL', 'MSFT'],
+    start_date=str(year_ago),
+    end_date=str(today)
+)
+```
 
-# Analyze trends
-df = pd.DataFrame(results_history)
-print(df.describe())
+Time period affects:
+- Prophet model training data
+- Return estimates for optimization
+- Seasonal patterns captured
+
+**Recommendations:**
+- Minimum: 6 months (less data = less reliable)
+- Recommended: 1-2 years (balance reliability and recency)
+- Maximum: 5+ years (captures full market cycles)
+
+---
+
+## Dashboard Usage
+
+### Starting Dashboard
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Run Streamlit app
+streamlit run src/streamlit_app.py
+```
+
+Opens at `http://localhost:8501`
+
+### Dashboard Sections
+
+#### 1. Latest Optimization Results
+
+Shows:
+- Optimization date and time
+- Latest predicted prices
+- Predicted returns
+- Recommended allocations
+
+#### 2. Price History
+
+Displays:
+- Historical prices vs predictions
+- Price trends over time
+- Prediction accuracy
+
+#### 3. Portfolio Recommendations
+
+Visual display of:
+- Asset allocation percentages
+- Pie chart of portfolio weights
+- Allocation ranges
+
+#### 4. Prediction Performance
+
+Metrics:
+- Mean Absolute Percentage Error (MAPE)
+- Root Mean Square Error (RMSE)
+- Hit rate (% correct direction)
+
+### Interpreting Charts
+
+**Price Chart:**
+- Blue line = Historical prices
+- Red line = Predicted prices
+- Green = Predicted increase
+- Red = Predicted decrease
+
+**Allocation Chart:**
+- Size of segment = portfolio weight
+- Color = ticker symbol
+- Hover for percentage
+
+**Performance Metrics:**
+- Lower MAPE/RMSE = More accurate model
+- Higher hit rate = Better directional calls
+
+---
+
+## Portfolio Scenarios
+
+### Scenario 1: Growth Portfolio
+
+**Use Case:** Long-term investor, high risk tolerance, wants growth
+
+**Configuration:**
+```python
+growth_tickers = [
+    'NVDA',   # AI/Semiconductors
+    'TSLA',   # EV/Tech
+    'GOOGL',  # Tech/Internet
+    'META',   # Social/AI
+    'AAPL'    # Tech/Innovation
+]
+
+result = run_optimisation(
+    tickers=growth_tickers,
+    start_date='2024-01-01',
+    end_date='2024-12-31'
+)
+```
+
+**Expected Results:**
+- Higher growth potential
+- More volatile allocations
+- Higher expected returns
+- Higher risk
+
+### Scenario 2: Income Portfolio
+
+**Use Case:** Retiree, low risk tolerance, wants consistent dividends
+
+**Configuration:**
+```python
+income_tickers = [
+    'XOM',    # Energy (high dividend)
+    'JNJ',    # Healthcare (dividend aristocrat)
+    'V',      # Payments (growing dividend)
+    'JPM',    # Finance (strong dividends)
+    'WMT'     # Retail (stable dividend)
+]
+
+weights = optimize_portfolio_mean_variance(
+    portfolio_data,
+    minimum_allocation=0.10,   # Larger positions
+    maximum_allocation=0.25,   # Not too concentrated
+    risk_aversion=8.0          # Conservative
+)
+```
+
+**Expected Results:**
+- Stable allocations
+- Lower volatility
+- Predictable returns
+- Dividend-focused
+
+### Scenario 3: Balanced Portfolio
+
+**Use Case:** Moderate investor, balanced risk/reward
+
+**Configuration:**
+```python
+balanced_tickers = [
+    # Tech
+    'AAPL', 'MSFT', 'GOOGL',
+    # Finance
+    'JPM', 'V',
+    # Healthcare
+    'JNJ',
+    # Growth
+    'AMZN'
+]
+
+weights = optimize_portfolio_mean_variance(
+    portfolio_data,
+    minimum_allocation=0.05,
+    maximum_allocation=0.40,
+    risk_aversion=5.0
+)
+```
+
+**Expected Results:**
+- Moderate growth potential
+- Reasonable risk level
+- Balanced sector exposure
+- Good diversification
+
+### Scenario 4: Sector Rotation
+
+**Use Case:** Tactical investor, wants to rotate between sectors
+
+**Q1 Configuration (Tech heavy):**
+```python
+q1_tickers = ['AAPL', 'MSFT', 'NVDA', 'GOOGL']
+```
+
+**Q2 Configuration (Rotate to Finance):**
+```python
+q2_tickers = ['JPM', 'V', 'GS', 'BAC']
+```
+
+**Q3 Configuration (Rotate to Energy):**
+```python
+q3_tickers = ['XOM', 'CVX', 'MPC', 'EOG']
 ```
 
 ---
 
 ## FAQ
 
-### Q: How often should I rebalance my portfolio?
+### Q: How often should I run optimization?
 
-**A:** Weekly rebalancing is reasonable. Daily rebalancing incurs transaction costs. Monthly is conservative. 
+**A:** Depends on your strategy:
+- **Daily traders**: Run daily before market open
+- **Active investors**: Run weekly (Sunday evening)
+- **Long-term investors**: Run monthly or quarterly
+- **Set and forget**: Run once, rebalance annually
 
-**Recommendation:**
-- Weekly for active traders
-- Monthly for most investors
-- Quarterly for long-term investors
+### Q: Should I follow the model's predictions exactly?
 
-### Q: What if a prediction seems wrong?
-
-**A:** 
-- Predictions are statistical models with ~5-10% MAPE
-- They can fail during market shocks or extreme events
-- Always use as guidance, not absolute truth
-- Consider combining with other analysis
-
-### Q: How much historical data do I need?
-
-**A:**
-- Minimum: 6 months
-- Recommended: 1-2 years
-- Longer history = better seasonality capture
-- Too long (>10 years) = includes old market conditions
-
-### Q: Can I use this for crypto or bonds?
-
-**A:**
-- Crypto: Yes, but higher volatility = less reliable
-- Bonds: Not recommended (Prophet works best with volatile daily data)
-- Forex: Yes, forex has daily data
-- Commodities: Yes, with commodity tickers
-
-### Q: What's a good risk aversion value?
-
-**A:**
-- **1-3**: Aggressive growth (stock trader)
-- **3-6**: Balanced (typical investor)
-- **6-10**: Conservative (retiree)
-
-Start with 5.0 and adjust based on comfort level.
+**A:** No. Use predictions as input to decision-making:
+- ✅ Use as one factor among many
+- ✅ Cross-check with fundamentals
+- ✅ Consider your risk tolerance
+- ❌ Don't follow blindly
+- ❌ Don't ignore your research
 
 ### Q: How accurate are the predictions?
 
-**A:**
-- Typical MAPE: 5-8% for large-cap stocks
-- Range: 3-15% depending on volatility
-- Accuracy decreases with market shocks
-- More accurate for stable companies (Microsoft, Apple)
-- Less accurate for volatile stocks (Tesla, crypto)
+**A:** Typically 50-60% directional accuracy:
+- Better on stable stocks
+- Worse on volatile stocks
+- Improves with more training data
+- Depends on market conditions
 
-### Q: What if a stock data fetch fails?
+**Check dashboard for:**
+- MAPE (Mean Absolute % Error)
+- Hit rate (% correct direction)
+- Recent track record
 
-**A:**
-- System continues with other stocks
-- Missing stocks are excluded from portfolio
-- Check logs for specific error
-- Usually temporary (retry next day)
+### Q: What if a ticker data is missing?
 
-### Q: Can I add more than 20 stocks?
+**A:** Application handles gracefully:
+- Missing tickers are skipped
+- Optimization continues with available data
+- Returns empty dict if NO data for any ticker
+- Check logs for details
 
-**A:** 
-- Yes, but diminishing returns
-- More stocks = more computation time
-- More stocks = lower weight per stock
-- Optimal: 10-20 stocks
-- Maximum tested: 50 stocks
+### Q: Can I use different date ranges?
 
-### Q: Is this financial advice?
+**A:** Yes, but with tradeoffs:
 
-**A:** 
-**NO.** This is for educational/illustrative purposes only.
-- Past performance ≠ future results
-- Always consult a financial advisor
-- Use at your own risk
-- Author is not responsible for investment losses
+| Period | Pros | Cons |
+|--------|------|------|
+| 3 months | Recent trends | Less reliable |
+| 1 year | Good balance | May miss cycles |
+| 2-3 years | Comprehensive | Less recent |
+| 5+ years | Full cycles | Outdated data |
 
-### Q: How do I troubleshoot prediction failures?
+**Recommendation:** Use 1-2 years
 
-Check in this order:
-1. Internet connection (can reach yfinance?)
-2. Valid tickers (do they exist?)
-3. Date range (is data available?)
-4. Logs: Check system logs for errors
-5. Credentials: Are Supabase credentials set?
-
-### Q: Can I use this in production?
+### Q: How do allocation constraints work?
 
 **A:** 
-- Yes, but with caution
-- Tested with ~$5,000 portfolios
-- Add monitoring and alerts
-- Use conservative settings initially
-- Test with paper trading first
+- **Minimum:** Smallest position allowed (e.g., 0.05 = 5%)
+- **Maximum:** Largest position allowed (e.g., 0.40 = 40%)
+- **Sum:** Always equals 1.0 (100% invested)
 
-### Q: What's the typical runtime?
+Example:
+```
+Without constraints:
+  AAPL: 100% (concentrated)
+  MSFT: 0%
 
-**A:**
-- 12 stocks: ~15-20 seconds
-- 30 stocks: ~30-40 seconds
-- 50 stocks: ~60-120 seconds
-
-### Q: How do I report a bug?
-
-**A:**
-- GitHub Issues: https://github.com/nyxkings/prophet-stock-forecast/issues
-- Include: error message, stocks, date range
-- Check existing issues first
-
----
-
-## Example: Complete Workflow
-
-```python
-# 1. Run optimization
-from src.main import run_optimisation
-
-result = run_optimisation(
-    tickers=['AAPL', 'MSFT', 'GOOGL'],
-    start_date='2024-01-01',
-    end_date='2024-05-07'
-)
-
-# 2. Calculate allocation amounts
-portfolio_value = 100_000
-allocations = {}
-
-for ticker, weight in result['weights'].items():
-    allocations[ticker] = portfolio_value * weight
-
-# 3. Execute trades
-print("Suggested Trades:")
-for ticker, amount in allocations.items():
-    print(f"  Buy ${amount:,.0f} of {ticker}")
-
-# 4. Monitor results
-print("\nPredicted Performance:")
-print(f"Expected Returns: {result['predicted_returns']}")
-
-# 5. Track accuracy (next day)
-actual_prices = ...  # Fetch from broker
-predictions = result['predictions']
-
-accuracy = calculate_accuracy(predictions, actual_prices)
-print(f"\nPrediction Accuracy: {accuracy:.1%}")
-
-# 6. Rebalance next week
-# Repeat process
+With min=0.1, max=0.4:
+  AAPL: 40% (max allowed)
+  MSFT: 35% (gets allocated)
+  GOOGL: 25% (gets allocated)
 ```
 
+### Q: Can I manually adjust weights?
+
+**A:** Yes, after getting recommendations:
+
+```python
+result = run_optimisation(...)
+weights = result['weights']
+
+# Adjust based on your views
+weights['AAPL'] = 0.30  # Reduce
+weights['MSFT'] = 0.50  # Increase
+weights['GOOGL'] = 0.20 # Adjust
+
+# Verify sum = 1.0
+assert abs(sum(weights.values()) - 1.0) < 0.01
+```
+
+### Q: How do I interpret prediction confidence?
+
+**A:** No confidence interval included, but use:
+1. **Recent accuracy** - Check dashboard MAPE
+2. **Model fit** - Better fit = more confident
+3. **Data quality** - More historical data = more confident
+4. **Market volatility** - High volatility = less confident
+
+### Q: What if I have a small portfolio?
+
+**A:** Works fine, but:
+
+```python
+# Small portfolio example
+small_portfolio = ['AAPL', 'MSFT']  # Just 2 stocks
+
+result = run_optimisation(
+    tickers=small_portfolio,
+    start_date='2024-01-01',
+    end_date='2024-12-31'
+)
+
+# Will still optimize, but:
+# - Less diversification benefit
+# - Simpler optimization problem
+# - May focus on single stock
+```
+
+**Recommendation:** At least 3-5 stocks for diversification
+
+### Q: Can I use international stocks?
+
+**A:** Yes, yfinance supports them:
+
+```python
+international = [
+    'AAPL',      # USA
+    'ASML.AS',   # Netherlands
+    'SAP.DE',    # Germany
+    'BP.L',      # UK
+    'TSM',       # Taiwan
+]
+
+result = run_optimisation(tickers=international, ...)
+```
+
+**Note:** Currency differences not handled; returns in local currency
+
+### Q: How do I handle rebalancing?
+
+**A:** Three approaches:
+
+1. **No rebalancing** (buy and hold)
+   ```python
+   # Run once, keep weights
+   weights = result['weights']
+   # Don't change weights
+   ```
+
+2. **Annual rebalancing**
+   ```python
+   # Every Jan 1, run optimization
+   if today.month == 1 and today.day == 1:
+       result = run_optimisation(...)
+       new_weights = result['weights']
+       # Rebalance to new weights
+   ```
+
+3. **Daily rebalancing** (active)
+   ```python
+   # Run daily, change weights daily
+   result = run_optimisation(...)
+   daily_weights = result['weights']
+   # Rebalance daily
+   ```
+
+### Q: What about transaction costs?
+
+**A:** Not currently modeled. To include:
+- Larger allocation swings = higher costs
+- Consider using `minimum_allocation` constraint
+- Don't rebalance too frequently
+- Use limit orders to minimize slippage
+
 ---
 
-## Next Steps
+## Support
 
-- **Advanced**: Read [API Documentation](API.md)
-- **Architecture**: See [Architecture Docs](ARCHITECTURE.md)
-- **Deployment**: Check [Deployment Guide](DEPLOYMENT.md)
-- **Contributing**: See [Testing Guide](TESTING.md)
+- **Documentation**: See `API_DOCUMENTATION.md`
+- **Deployment**: See `DEPLOYMENT.md`
+- **Testing**: Run `pytest tests/ -v`
+- **Issues**: Check GitHub repository
 
----
-
-**Need Help?**
-- GitHub Issues: https://github.com/nyxkings/prophet-stock-forecast/issues
-- Subreddit: r/algotrading, r/investing
-- Email: Check repo README for contact
-
-**Disclaimer**: This software is provided "AS-IS" without warranty. Past performance is not indicative of future results. Always consult a financial advisor before making investment decisions.
-
----
-
-**Last Updated**: May 7, 2024
