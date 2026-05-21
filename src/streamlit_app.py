@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.database import get_supabase_client
+from src.efficient_frontier import EfficientFrontier
 from src.settings import SUPABASE_TABLE_NAME
 
 st.set_page_config(page_title="Portfolio Forecast Dashboard", layout="wide")
@@ -472,11 +473,12 @@ def run_dashboard() -> None:
         )
 
     # Create tabbed interface
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Overview",
         "🎯 Prediction Accuracy",
         "📊 Advanced Analytics",
-        "⚙️ Performance Metrics"
+        "⚙️ Performance Metrics",
+        "🎯 Efficient Frontier"
     ])
 
     # ========================================================================
@@ -792,6 +794,236 @@ def run_dashboard() -> None:
                             "Volatility (Predicted)",
                             f"{portfolio_metrics['volatility_predicted']:.2f}"
                         )
+
+
+    # ========================================================================
+    # TAB 5: EFFICIENT FRONTIER
+    # ========================================================================
+    with tab5:
+        st.subheader("Efficient Frontier Analysis")
+        st.markdown(
+            """Explore the risk-return tradeoff across different portfolio allocations.
+            The efficient frontier shows optimal portfolios for different risk preferences."""
+        )
+        
+        # Get expected returns and covariance from latest data
+        try:
+            # Extract returns data from the latest portfolio
+            returns_data = {}
+            for _, row in date_df.iterrows():
+                ticker = row["ticker"]
+                returns_data[ticker] = row["predicted_return"]
+            
+            # Create covariance matrix from historical returns
+            # For now, use a simplified approach with returns data
+            returns_series = pd.Series(returns_data)
+            
+            if len(returns_series) < 2:
+                st.warning("Need at least 2 assets to generate frontier.")
+            else:
+                # Create simple covariance matrix (identity scaled by variance)
+                # This uses the returns as a proxy for risk
+                returns_array = returns_series.values
+                # Use returns variance as diagonal elements
+                cov_matrix = pd.DataFrame(
+                    np.diag(np.abs(returns_array) * 0.01 + 0.001),
+                    index=returns_series.index,
+                    columns=returns_series.index
+                )
+                # Add small correlations
+                for i, idx1 in enumerate(returns_series.index):
+                    for j, idx2 in enumerate(returns_series.index):
+                        if i < j:
+                            cov_matrix.loc[idx1, idx2] = 0.3 * np.sqrt(
+                                cov_matrix.loc[idx1, idx1] * cov_matrix.loc[idx2, idx2]
+                            )
+                            cov_matrix.loc[idx2, idx1] = cov_matrix.loc[idx1, idx2]
+                
+                # Generate frontier
+                num_points = st.slider(
+                    "Number of frontier points",
+                    min_value=10,
+                    max_value=100,
+                    value=50,
+                    step=10
+                )
+                
+                frontier_result = EfficientFrontier.generate_frontier(
+                    returns_series,
+                    cov_matrix,
+                    num_points=num_points,
+                )
+                
+                # Create and display frontier plot
+                st.subheader("Risk vs Return")
+                
+                # Get current weights if available
+                current_weights = {}
+                for _, row in date_df.iterrows():
+                    current_weights[row["ticker"]] = row["portfolio_weight"]
+                
+                # Generate Plotly figure manually (since plotly may not be fully available)
+                fig = go.Figure()
+                
+                # Extract frontier data
+                volatilities = [p.volatility for p in frontier_result.frontier_points]
+                returns_list = [p.expected_return for p in frontier_result.frontier_points]
+                sharpe_ratios = [p.sharpe_ratio for p in frontier_result.frontier_points]
+                
+                # Plot frontier curve
+                fig.add_trace(
+                    go.Scatter(
+                        x=volatilities,
+                        y=returns_list,
+                        mode="lines",
+                        name="Efficient Frontier",
+                        line=dict(color="blue", width=2),
+                        hovertemplate="<b>Volatility:</b> %{x:.4f}<br>"
+                        "<b>Expected Return:</b> %{y:.4f}<br>"
+                        "<extra></extra>",
+                    )
+                )
+                
+                # Plot frontier points with Sharpe ratio coloring
+                fig.add_trace(
+                    go.Scatter(
+                        x=volatilities,
+                        y=returns_list,
+                        mode="markers",
+                        name="Portfolio Points",
+                        marker=dict(
+                            size=6,
+                            color=sharpe_ratios,
+                            colorscale="Viridis",
+                            showscale=True,
+                            colorbar=dict(title="Sharpe Ratio"),
+                        ),
+                        hovertemplate="<b>Volatility:</b> %{x:.4f}<br>"
+                        "<b>Expected Return:</b> %{y:.4f}<br>"
+                        "<b>Sharpe Ratio:</b> %{marker.color:.4f}<br>"
+                        "<extra></extra>",
+                    )
+                )
+                
+                # Highlight minimum variance portfolio
+                min_var = frontier_result.min_variance_portfolio
+                fig.add_trace(
+                    go.Scatter(
+                        x=[min_var.volatility],
+                        y=[min_var.expected_return],
+                        mode="markers",
+                        name="Min Variance Portfolio",
+                        marker=dict(size=15, color="red", symbol="star"),
+                        hovertemplate="<b>Min Variance Portfolio</b><br>"
+                        f"<b>Volatility:</b> {min_var.volatility:.4f}<br>"
+                        f"<b>Expected Return:</b> {min_var.expected_return:.4f}<br>"
+                        f"<b>Sharpe Ratio:</b> {min_var.sharpe_ratio:.4f}<br>"
+                        "<extra></extra>",
+                    )
+                )
+                
+                # Highlight maximum Sharpe portfolio
+                max_sharpe = frontier_result.max_sharpe_portfolio
+                fig.add_trace(
+                    go.Scatter(
+                        x=[max_sharpe.volatility],
+                        y=[max_sharpe.expected_return],
+                        mode="markers",
+                        name="Max Sharpe Portfolio",
+                        marker=dict(size=15, color="gold", symbol="diamond"),
+                        hovertemplate="<b>Max Sharpe Portfolio</b><br>"
+                        f"<b>Volatility:</b> {max_sharpe.volatility:.4f}<br>"
+                        f"<b>Expected Return:</b> {max_sharpe.expected_return:.4f}<br>"
+                        f"<b>Sharpe Ratio:</b> {max_sharpe.sharpe_ratio:.4f}<br>"
+                        "<extra></extra>",
+                    )
+                )
+                
+                # Plot current portfolio if valid
+                if len(current_weights) > 0:
+                    try:
+                        curr_vol, curr_ret, curr_sharpe = EfficientFrontier.calculate_portfolio_metrics(
+                            current_weights,
+                            returns_series,
+                            cov_matrix,
+                        )
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[curr_vol],
+                                y=[curr_ret],
+                                mode="markers",
+                                name="Current Portfolio",
+                                marker=dict(size=15, color="green", symbol="circle"),
+                                hovertemplate="<b>Current Portfolio</b><br>"
+                                f"<b>Volatility:</b> {curr_vol:.4f}<br>"
+                                f"<b>Expected Return:</b> {curr_ret:.4f}<br>"
+                                f"<b>Sharpe Ratio:</b> {curr_sharpe:.4f}<br>"
+                                "<extra></extra>",
+                            )
+                        )
+                    except (KeyError, ValueError):
+                        pass
+                
+                # Update layout
+                fig.update_layout(
+                    title="Efficient Frontier - Risk vs Return",
+                    xaxis_title="Portfolio Volatility (Risk)",
+                    yaxis_title="Expected Return",
+                    hovermode="closest",
+                    height=600,
+                    template="plotly_white",
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Display portfolio details below frontier
+                st.subheader("Portfolio Allocations")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Minimum Variance Portfolio**")
+                    st.metric("Volatility", f"{min_var.volatility:.4f}")
+                    st.metric("Expected Return", f"{min_var.expected_return:.4f}")
+                    st.metric("Sharpe Ratio", f"{min_var.sharpe_ratio:.4f}")
+                    
+                    st.markdown("**Weights:**")
+                    min_var_weights_df = pd.DataFrame(
+                        list(min_var.weights.items()),
+                        columns=["Ticker", "Weight"]
+                    )
+                    min_var_weights_df = min_var_weights_df.sort_values("Weight", ascending=False)
+                    st.dataframe(
+                        min_var_weights_df,
+                        hide_index=True,
+                        column_config={
+                            "Weight": st.column_config.NumberColumn(format="%.2f%%")
+                        }
+                    )
+                
+                with col2:
+                    st.markdown("**Maximum Sharpe Ratio Portfolio**")
+                    st.metric("Volatility", f"{max_sharpe.volatility:.4f}")
+                    st.metric("Expected Return", f"{max_sharpe.expected_return:.4f}")
+                    st.metric("Sharpe Ratio", f"{max_sharpe.sharpe_ratio:.4f}")
+                    
+                    st.markdown("**Weights:**")
+                    max_sharpe_weights_df = pd.DataFrame(
+                        list(max_sharpe.weights.items()),
+                        columns=["Ticker", "Weight"]
+                    )
+                    max_sharpe_weights_df = max_sharpe_weights_df.sort_values("Weight", ascending=False)
+                    st.dataframe(
+                        max_sharpe_weights_df,
+                        hide_index=True,
+                        column_config={
+                            "Weight": st.column_config.NumberColumn(format="%.2f%%")
+                        }
+                    )
+        
+        except Exception as e:
+            st.error(f"Error generating frontier: {str(e)}")
+            st.info("Ensure portfolio has sufficient data and valid returns.")
 
 
 def main() -> None:
