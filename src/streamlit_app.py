@@ -15,6 +15,7 @@ import streamlit as st
 
 from src.database import get_supabase_client
 from src.efficient_frontier import EfficientFrontier
+from src.mock_data import generate_mock_portfolio_data
 from src.settings import SUPABASE_TABLE_NAME
 
 st.set_page_config(page_title="Portfolio Forecast Dashboard", layout="wide")
@@ -107,10 +108,12 @@ def calculate_portfolio_metrics(perf_df: pd.DataFrame) -> dict[str, float]:
 
 @st.cache_data(ttl=300)
 def load_supabase_predictions() -> pd.DataFrame:
-    """Return latest Supabase rows (one per ticker per date)."""
+    """Return latest Supabase rows (one per ticker per date) or mock data if unavailable."""
     client = get_supabase_client()
     if client is None:
-        return pd.DataFrame()
+        # Use mock data if Supabase is not available
+        st.info("💡 Using mock data for demonstration (Supabase not configured)")
+        return generate_mock_portfolio_data()
 
     response = (
         client.table(SUPABASE_TABLE_NAME)
@@ -121,7 +124,9 @@ def load_supabase_predictions() -> pd.DataFrame:
     )
     data = getattr(response, "data", None)
     if not data:
-        return pd.DataFrame()
+        # Fallback to mock data if no data in Supabase
+        st.info("💡 No data in Supabase. Using mock data for demonstration.")
+        return generate_mock_portfolio_data()
 
     df = pd.DataFrame(data)
     if "as_of_date" in df.columns:
@@ -155,6 +160,9 @@ def _parse_price_history(raw: object) -> list[float]:
 
 def _latest_actual_price(row: pd.Series) -> float | None:
     prices = row.get("actual_prices_last_month", [])
+    # Ensure prices are parsed as a list
+    if isinstance(prices, str):
+        prices = _parse_price_history(prices)
     if prices:
         return float(prices[-1])
     return None
@@ -162,6 +170,9 @@ def _latest_actual_price(row: pd.Series) -> float | None:
 
 def build_price_history(row: pd.Series) -> tuple[pd.DataFrame, pd.DataFrame] | None:
     prices = row.get("actual_prices_last_month", [])
+    # Ensure prices are parsed as a list
+    if isinstance(prices, str):
+        prices = _parse_price_history(prices)
     if not prices:
         return None
 
@@ -183,7 +194,13 @@ def build_price_history(row: pd.Series) -> tuple[pd.DataFrame, pd.DataFrame] | N
 @lru_cache(maxsize=1)
 def compute_prediction_performance(data_json: str) -> pd.DataFrame:
     """Compare past predictions against actual outcomes using successive days."""
-    df = pd.read_json(data_json, orient="records", convert_dates=False)
+    from io import StringIO
+    
+    try:
+        df = pd.read_json(StringIO(data_json), orient="records", convert_dates=False)
+    except ValueError:
+        return pd.DataFrame()
+    
     if df.empty:
         return df
 
@@ -446,7 +463,7 @@ def run_dashboard() -> None:
     # Load data
     df = load_supabase_predictions()
     if df.empty:
-        st.info("No prediction data available. Run the optimisation pipeline to populate Supabase.")
+        st.error("❌ No prediction data available. Unable to load mock data either.")
         return
 
     # Create two columns: date selector and export button
@@ -494,7 +511,7 @@ def run_dashboard() -> None:
             if pie is None:
                 st.info("Weights are zero or missing for this date.")
             else:
-                st.plotly_chart(pie, use_container_width=True)
+                st.plotly_chart(pie, width="stretch")
                 st.caption("Current portfolio allocation")
         
         with col2:
@@ -513,7 +530,7 @@ def run_dashboard() -> None:
             st.dataframe(
                 summary_table[["Ticker", "Predicted Price", "Return (%)", "Weight (%)"]],
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "Predicted Price": st.column_config.NumberColumn(format="$%.2f"),
                     "Return (%)": st.column_config.NumberColumn(format="%.2f%%"),
@@ -534,7 +551,7 @@ def run_dashboard() -> None:
         weight_df = df[(df["as_of_date"] >= date_range[0]) & (df["as_of_date"] <= date_range[1])].copy()
         weight_chart = create_weight_history_chart(weight_df)
         if weight_chart:
-            st.plotly_chart(weight_chart, use_container_width=True)
+            st.plotly_chart(weight_chart, width="stretch")
         else:
             st.info("No weight history available for selected date range.")
 
@@ -621,13 +638,13 @@ def run_dashboard() -> None:
                     ],
                 )
             )
-            st.altair_chart(line_chart_trend, use_container_width=True)
+            st.altair_chart(line_chart_trend, width="stretch")
 
         # Cumulative returns
         st.subheader(f"Cumulative Returns · {selected_ticker}")
         cumulative_chart = create_cumulative_returns_chart(perf_df, selected_ticker)
         if cumulative_chart:
-            st.altair_chart(cumulative_chart, use_container_width=True)
+            st.altair_chart(cumulative_chart, width="stretch")
         else:
             st.info("Not enough data to calculate cumulative returns.")
 
@@ -635,7 +652,7 @@ def run_dashboard() -> None:
         st.subheader(f"Error Distribution · {selected_ticker}")
         error_dist = create_returns_distribution(perf_df, selected_ticker)
         if error_dist:
-            st.plotly_chart(error_dist, use_container_width=True)
+            st.plotly_chart(error_dist, width="stretch")
         else:
             st.info("No error data available.")
 
@@ -673,7 +690,7 @@ def run_dashboard() -> None:
                         ]
                     ],
                     hide_index=True,
-                    use_container_width=True,
+                    width="stretch",
                     column_config={
                         "Predicted Price": st.column_config.NumberColumn(format="$%.2f"),
                         "Actual Price": st.column_config.NumberColumn(format="$%.2f"),
@@ -696,7 +713,7 @@ def run_dashboard() -> None:
                 st.subheader("Prediction Error Heatmap")
                 heatmap = create_error_heatmap(perf_df)
                 if heatmap:
-                    st.plotly_chart(heatmap, use_container_width=True)
+                    st.plotly_chart(heatmap, width="stretch")
                 else:
                     st.info("Not enough data for heatmap.")
             
@@ -704,7 +721,7 @@ def run_dashboard() -> None:
                 st.subheader("Error Correlation Matrix")
                 corr_chart = create_correlation_matrix(perf_df)
                 if corr_chart:
-                    st.plotly_chart(corr_chart, use_container_width=True)
+                    st.plotly_chart(corr_chart, width="stretch")
                 else:
                     st.info("Not enough tickers or data for correlation analysis.")
 
@@ -753,7 +770,7 @@ def run_dashboard() -> None:
             st.dataframe(
                 metrics_df,
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "MAPE (%)": st.column_config.NumberColumn(format="%.2f%%"),
                     "RMSE": st.column_config.NumberColumn(format="$%.2f"),
@@ -974,7 +991,7 @@ def run_dashboard() -> None:
                     template="plotly_white",
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
                 
                 # Display portfolio details below frontier
                 st.subheader("Portfolio Allocations")
