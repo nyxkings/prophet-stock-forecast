@@ -18,9 +18,6 @@ from src.efficient_frontier import EfficientFrontier
 from src.mock_data import generate_mock_portfolio_data
 from src.settings import SUPABASE_TABLE_NAME
 
-st.set_page_config(page_title="Portfolio Forecast Dashboard", layout="wide")
-
-
 # ============================================================================
 # METRICS CALCULATION FUNCTIONS
 # ============================================================================
@@ -48,15 +45,15 @@ def calculate_metrics(perf_df: pd.DataFrame, ticker: str | None = None) -> dict[
     """Calculate MAPE, RMSE, MAE for a ticker or entire portfolio."""
     if perf_df.empty:
         return {"mape": 0.0, "rmse": 0.0, "mae": 0.0, "count": 0}
-    
+
     if ticker:
         data = perf_df[perf_df["ticker"] == ticker]
     else:
         data = perf_df
-    
+
     if data.empty:
         return {"mape": 0.0, "rmse": 0.0, "mae": 0.0, "count": 0}
-    
+
     return {
         "mape": calculate_mape(data["actual_price"], data["predicted_price"]),
         "rmse": calculate_rmse(data["actual_price"], data["predicted_price"]),
@@ -70,12 +67,12 @@ def calculate_cumulative_returns(perf_df: pd.DataFrame, ticker: str) -> pd.DataF
     data = perf_df[perf_df["ticker"] == ticker].sort_values("evaluation_date").copy()
     if data.empty:
         return pd.DataFrame()
-    
+
     data["actual_return"] = data["actual_price"].pct_change()
     data["predicted_return"] = data["predicted_price"].pct_change()
     data["actual_cumulative"] = (1 + data["actual_return"]).cumprod() - 1
     data["predicted_cumulative"] = (1 + data["predicted_return"]).cumprod() - 1
-    
+
     return data
 
 
@@ -83,15 +80,16 @@ def calculate_portfolio_metrics(perf_df: pd.DataFrame) -> dict[str, float]:
     """Calculate portfolio-level metrics."""
     if perf_df.empty:
         return {}
-    
+
     # Group by evaluation date and sum returns
     daily_returns = perf_df.groupby("evaluation_date").apply(
         lambda x: pd.Series({
             "actual_return": x["actual_price"].pct_change().mean(),
             "predicted_return": x["predicted_price"].pct_change().mean(),
-        })
+        }),
+        include_groups=False
     )
-    
+
     metrics = {}
     if not daily_returns.empty:
         metrics["sharpe_actual"] = float(
@@ -102,7 +100,7 @@ def calculate_portfolio_metrics(perf_df: pd.DataFrame) -> dict[str, float]:
         )
         metrics["volatility_actual"] = float(daily_returns["actual_return"].std() * np.sqrt(252))
         metrics["volatility_predicted"] = float(daily_returns["predicted_return"].std() * np.sqrt(252))
-    
+
     return metrics
 
 
@@ -195,12 +193,12 @@ def build_price_history(row: pd.Series) -> tuple[pd.DataFrame, pd.DataFrame] | N
 def compute_prediction_performance(data_json: str) -> pd.DataFrame:
     """Compare past predictions against actual outcomes using successive days."""
     from io import StringIO
-    
+
     try:
         df = pd.read_json(StringIO(data_json), orient="records", convert_dates=False)
     except ValueError:
         return pd.DataFrame()
-    
+
     if df.empty:
         return df
 
@@ -281,19 +279,19 @@ def create_error_heatmap(perf_df: pd.DataFrame) -> go.Figure | None:
     """Create heatmap of prediction errors by ticker and date."""
     if perf_df.empty:
         return None
-    
+
     pivot_df = perf_df.pivot_table(
         index="ticker",
         columns="evaluation_date",
         values="error_pct",
         aggfunc="mean"
     )
-    
+
     if pivot_df.empty:
         return None
-    
+
     pivot_df = pivot_df * 100  # Convert to percentage
-    
+
     fig = go.Figure(
         data=go.Heatmap(
             z=pivot_df.values,
@@ -317,18 +315,18 @@ def create_correlation_matrix(perf_df: pd.DataFrame) -> go.Figure | None:
     """Create correlation matrix of prediction errors."""
     if perf_df.empty or len(perf_df["ticker"].unique()) < 2:
         return None
-    
+
     error_by_ticker = perf_df.pivot_table(
         index="evaluation_date",
         columns="ticker",
         values="error_pct"
     )
-    
+
     if error_by_ticker.empty or error_by_ticker.shape[1] < 2:
         return None
-    
+
     corr_matrix = error_by_ticker.corr()
-    
+
     fig = go.Figure(
         data=go.Heatmap(
             z=corr_matrix.values,
@@ -356,9 +354,9 @@ def create_returns_distribution(perf_df: pd.DataFrame, ticker: str) -> go.Figure
     data = perf_df[perf_df["ticker"] == ticker].copy()
     if data.empty:
         return None
-    
+
     data["error_pct"] = data["error_pct"] * 100
-    
+
     fig = go.Figure()
     fig.add_trace(go.Histogram(
         x=data["error_pct"],
@@ -367,7 +365,7 @@ def create_returns_distribution(perf_df: pd.DataFrame, ticker: str) -> go.Figure
         marker=dict(color="rgba(31, 119, 180, 0.7)"),
         hovertemplate="Error Range: %{x:.1f}%<br>Count: %{y}<extra></extra>"
     ))
-    
+
     fig.update_layout(
         title=f"Prediction Error Distribution - {ticker}",
         xaxis_title="Error (%)",
@@ -383,14 +381,14 @@ def create_cumulative_returns_chart(perf_df: pd.DataFrame, ticker: str) -> alt.C
     data = calculate_cumulative_returns(perf_df, ticker)
     if data.empty:
         return None
-    
+
     # Prepare data for Altair
     long_df = pd.DataFrame({
         "Date": list(data["evaluation_date"]) + list(data["evaluation_date"]),
         "Cumulative Return": list(data["actual_cumulative"].fillna(0)) + list(data["predicted_cumulative"].fillna(0)),
         "Type": ["Actual"] * len(data) + ["Predicted"] * len(data),
     })
-    
+
     chart = (
         alt.Chart(long_df)
         .mark_line(point=True)
@@ -401,7 +399,7 @@ def create_cumulative_returns_chart(perf_df: pd.DataFrame, ticker: str) -> alt.C
             tooltip=["Date:T", "Type:N", alt.Tooltip("Cumulative Return:Q", format=".2f")]
         )
     )
-    
+
     return chart
 
 
@@ -409,9 +407,9 @@ def create_weight_history_chart(df: pd.DataFrame) -> go.Figure | None:
     """Create portfolio weight history over time."""
     if df.empty or "as_of_date" not in df.columns:
         return None
-    
+
     df_sorted = df.sort_values("as_of_date")
-    
+
     fig = go.Figure()
     for ticker in df_sorted["ticker"].unique():
         ticker_data = df_sorted[df_sorted["ticker"] == ticker].sort_values("as_of_date")
@@ -422,7 +420,7 @@ def create_weight_history_chart(df: pd.DataFrame) -> go.Figure | None:
             mode="lines+markers",
             hovertemplate="Date: %{x}<br>Weight: %{y:.2f}<extra></extra>"
         ))
-    
+
     fig.update_layout(
         title="Portfolio Weight History",
         xaxis_title="Date",
@@ -436,25 +434,26 @@ def create_weight_history_chart(df: pd.DataFrame) -> go.Figure | None:
 def export_to_csv(perf_df: pd.DataFrame, date_df: pd.DataFrame) -> str:
     """Generate CSV export of analysis data."""
     output = []
-    
+
     # Add summary statistics
     output.append("# PORTFOLIO FORECAST ANALYSIS")
     output.append(f"# Generated: {pd.Timestamp.now()}\n")
-    
+
     # Export prediction performance
     output.append("PREDICTION PERFORMANCE")
     output.append(perf_df.to_csv(index=False))
     output.append("\n")
-    
+
     # Export latest weights
     output.append("LATEST PORTFOLIO WEIGHTS")
     output.append(date_df[["ticker", "predicted_price", "predicted_return", "portfolio_weight"]].to_csv(index=False))
-    
+
     return "\n".join(output)
 
 
 def run_dashboard() -> None:
     """Run the enhanced dashboard with tabbed interface."""
+    st.set_page_config(page_title="Portfolio Forecast Dashboard", layout="wide")
     st.title("📊 Portfolio Forecast Dashboard")
     st.caption(
         "Advanced portfolio analysis with predictions, metrics, and visualizations."
@@ -468,19 +467,19 @@ def run_dashboard() -> None:
 
     # Create two columns: date selector and export button
     col1, col2 = st.columns([3, 1])
-    
+
     with col1:
         available_dates = sorted(df["as_of_date"].unique(), reverse=True)
         selected_date = st.selectbox(
-            "Select as-of date", 
-            options=available_dates, 
+            "Select as-of date",
+            options=available_dates,
             format_func=lambda d: d.strftime("%Y-%m-%d")
         )
 
     with col2:
         date_df = df[df["as_of_date"] == selected_date].copy().sort_values("ticker")
         perf_df = compute_prediction_performance(df.to_json(orient="records", date_format="iso"))
-        
+
         csv_data = export_to_csv(perf_df, date_df)
         st.download_button(
             label="📥 Export CSV",
@@ -503,9 +502,9 @@ def run_dashboard() -> None:
     # ========================================================================
     with tab1:
         st.subheader("Portfolio Allocation & Predictions")
-        
+
         col1, col2 = st.columns([1.5, 2])
-        
+
         with col1:
             pie = pie_chart(date_df)
             if pie is None:
@@ -513,12 +512,12 @@ def run_dashboard() -> None:
             else:
                 st.plotly_chart(pie, width="stretch")
                 st.caption("Current portfolio allocation")
-        
+
         with col2:
             summary_table = date_df[["ticker", "predicted_price", "predicted_return", "portfolio_weight"]].copy()
             summary_table["predicted_return_pct"] = summary_table["predicted_return"] * 100
             summary_table["portfolio_weight_pct"] = summary_table["portfolio_weight"] * 100
-            
+
             summary_table = summary_table.rename(
                 columns={
                     "ticker": "Ticker",
@@ -537,7 +536,7 @@ def run_dashboard() -> None:
                     "Weight (%)": st.column_config.NumberColumn(format="%.2f%%"),
                 },
             )
-        
+
         # Date range selector for weight history
         st.subheader("Weight History")
         date_range = st.slider(
@@ -547,7 +546,7 @@ def run_dashboard() -> None:
             value=(max(df["as_of_date"]) - timedelta(days=30), max(df["as_of_date"])),
             format="YYYY-MM-DD"
         )
-        
+
         weight_df = df[(df["as_of_date"] >= date_range[0]) & (df["as_of_date"] <= date_range[1])].copy()
         weight_chart = create_weight_history_chart(weight_df)
         if weight_chart:
@@ -588,7 +587,7 @@ def run_dashboard() -> None:
         # Price trend chart
         st.subheader(f"Price Trend · {selected_ticker}")
         ticker_perf_for_trend = perf_df[perf_df["ticker"] == selected_ticker].copy()
-        
+
         if ticker_perf_for_trend.empty:
             st.info("No historical prediction data available for this ticker yet.")
         else:
@@ -708,7 +707,7 @@ def run_dashboard() -> None:
             st.info("Not enough data for advanced analytics. Run the pipeline multiple times.")
         else:
             col1, col2 = st.columns(2)
-            
+
             with col1:
                 st.subheader("Prediction Error Heatmap")
                 heatmap = create_error_heatmap(perf_df)
@@ -716,7 +715,7 @@ def run_dashboard() -> None:
                     st.plotly_chart(heatmap, width="stretch")
                 else:
                     st.info("Not enough data for heatmap.")
-            
+
             with col2:
                 st.subheader("Error Correlation Matrix")
                 corr_chart = create_correlation_matrix(perf_df)
@@ -730,31 +729,31 @@ def run_dashboard() -> None:
     # ========================================================================
     with tab4:
         st.subheader("Portfolio Performance Metrics")
-        
+
         if perf_df.empty:
             st.info("Not enough data to calculate metrics.")
         else:
             # Overall portfolio metrics
             portfolio_metrics = calculate_portfolio_metrics(perf_df)
-            
+
             col1, col2, col3, col4 = st.columns(4)
-            
+
             with col1:
                 overall_metrics = calculate_metrics(perf_df)
                 st.metric("Overall MAPE", f"{overall_metrics['mape']:.2f}%")
-            
+
             with col2:
                 st.metric("Overall RMSE", f"${overall_metrics['rmse']:.2f}")
-            
+
             with col3:
                 st.metric("Overall MAE", f"${overall_metrics['mae']:.2f}")
-            
+
             with col4:
                 st.metric("Predictions Made", f"{overall_metrics['count']}")
-            
+
             # Per-ticker metrics
             st.subheader("Per-Ticker Metrics")
-            
+
             metrics_data = []
             for ticker in sorted(perf_df["ticker"].unique()):
                 ticker_metrics = calculate_metrics(perf_df, ticker)
@@ -765,7 +764,7 @@ def run_dashboard() -> None:
                     "MAE": ticker_metrics["mae"],
                     "Predictions": ticker_metrics["count"],
                 })
-            
+
             metrics_df = pd.DataFrame(metrics_data)
             st.dataframe(
                 metrics_df,
@@ -777,34 +776,34 @@ def run_dashboard() -> None:
                     "MAE": st.column_config.NumberColumn(format="$%.2f"),
                 }
             )
-            
+
             # Sharpe ratio and volatility if available
             if portfolio_metrics:
                 st.subheader("Risk Metrics")
-                
+
                 col1, col2, col3, col4 = st.columns(4)
-                
+
                 if "sharpe_actual" in portfolio_metrics:
                     with col1:
                         st.metric(
                             "Sharpe Ratio (Actual)",
                             f"{portfolio_metrics['sharpe_actual']:.2f}"
                         )
-                
+
                 if "sharpe_predicted" in portfolio_metrics:
                     with col2:
                         st.metric(
                             "Sharpe Ratio (Predicted)",
                             f"{portfolio_metrics['sharpe_predicted']:.2f}"
                         )
-                
+
                 if "volatility_actual" in portfolio_metrics:
                     with col3:
                         st.metric(
                             "Volatility (Actual)",
                             f"{portfolio_metrics['volatility_actual']:.2f}"
                         )
-                
+
                 if "volatility_predicted" in portfolio_metrics:
                     with col4:
                         st.metric(
@@ -822,7 +821,7 @@ def run_dashboard() -> None:
             """Explore the risk-return tradeoff across different portfolio allocations.
             The efficient frontier shows optimal portfolios for different risk preferences."""
         )
-        
+
         # Get expected returns and covariance from latest data
         try:
             # Extract returns data from the latest portfolio
@@ -830,11 +829,11 @@ def run_dashboard() -> None:
             for _, row in date_df.iterrows():
                 ticker = row["ticker"]
                 returns_data[ticker] = row["predicted_return"]
-            
+
             # Create covariance matrix from historical returns
             # For now, use a simplified approach with returns data
             returns_series = pd.Series(returns_data)
-            
+
             if len(returns_series) < 2:
                 st.warning("Need at least 2 assets to generate frontier.")
             else:
@@ -855,7 +854,7 @@ def run_dashboard() -> None:
                                 cov_matrix.loc[idx1, idx1] * cov_matrix.loc[idx2, idx2]
                             )
                             cov_matrix.loc[idx2, idx1] = cov_matrix.loc[idx1, idx2]
-                
+
                 # Generate frontier
                 num_points = st.slider(
                     "Number of frontier points",
@@ -864,29 +863,29 @@ def run_dashboard() -> None:
                     value=50,
                     step=10
                 )
-                
+
                 frontier_result = EfficientFrontier.generate_frontier(
                     returns_series,
                     cov_matrix,
                     num_points=num_points,
                 )
-                
+
                 # Create and display frontier plot
                 st.subheader("Risk vs Return")
-                
+
                 # Get current weights if available
                 current_weights = {}
                 for _, row in date_df.iterrows():
                     current_weights[row["ticker"]] = row["portfolio_weight"]
-                
+
                 # Generate Plotly figure manually (since plotly may not be fully available)
                 fig = go.Figure()
-                
+
                 # Extract frontier data
                 volatilities = [p.volatility for p in frontier_result.frontier_points]
                 returns_list = [p.expected_return for p in frontier_result.frontier_points]
                 sharpe_ratios = [p.sharpe_ratio for p in frontier_result.frontier_points]
-                
+
                 # Plot frontier curve
                 fig.add_trace(
                     go.Scatter(
@@ -900,7 +899,7 @@ def run_dashboard() -> None:
                         "<extra></extra>",
                     )
                 )
-                
+
                 # Plot frontier points with Sharpe ratio coloring
                 fig.add_trace(
                     go.Scatter(
@@ -921,7 +920,7 @@ def run_dashboard() -> None:
                         "<extra></extra>",
                     )
                 )
-                
+
                 # Highlight minimum variance portfolio
                 min_var = frontier_result.min_variance_portfolio
                 fig.add_trace(
@@ -938,7 +937,7 @@ def run_dashboard() -> None:
                         "<extra></extra>",
                     )
                 )
-                
+
                 # Highlight maximum Sharpe portfolio
                 max_sharpe = frontier_result.max_sharpe_portfolio
                 fig.add_trace(
@@ -955,7 +954,7 @@ def run_dashboard() -> None:
                         "<extra></extra>",
                     )
                 )
-                
+
                 # Plot current portfolio if valid
                 if len(current_weights) > 0:
                     try:
@@ -980,7 +979,7 @@ def run_dashboard() -> None:
                         )
                     except (KeyError, ValueError):
                         pass
-                
+
                 # Update layout
                 fig.update_layout(
                     title="Efficient Frontier - Risk vs Return",
@@ -990,20 +989,20 @@ def run_dashboard() -> None:
                     height=600,
                     template="plotly_white",
                 )
-                
+
                 st.plotly_chart(fig, width="stretch")
-                
+
                 # Display portfolio details below frontier
                 st.subheader("Portfolio Allocations")
-                
+
                 col1, col2 = st.columns(2)
-                
+
                 with col1:
                     st.markdown("**Minimum Variance Portfolio**")
                     st.metric("Volatility", f"{min_var.volatility:.4f}")
                     st.metric("Expected Return", f"{min_var.expected_return:.4f}")
                     st.metric("Sharpe Ratio", f"{min_var.sharpe_ratio:.4f}")
-                    
+
                     st.markdown("**Weights:**")
                     min_var_weights_df = pd.DataFrame(
                         list(min_var.weights.items()),
@@ -1017,13 +1016,13 @@ def run_dashboard() -> None:
                             "Weight": st.column_config.NumberColumn(format="%.2f%%")
                         }
                     )
-                
+
                 with col2:
                     st.markdown("**Maximum Sharpe Ratio Portfolio**")
                     st.metric("Volatility", f"{max_sharpe.volatility:.4f}")
                     st.metric("Expected Return", f"{max_sharpe.expected_return:.4f}")
                     st.metric("Sharpe Ratio", f"{max_sharpe.sharpe_ratio:.4f}")
-                    
+
                     st.markdown("**Weights:**")
                     max_sharpe_weights_df = pd.DataFrame(
                         list(max_sharpe.weights.items()),
@@ -1037,7 +1036,7 @@ def run_dashboard() -> None:
                             "Weight": st.column_config.NumberColumn(format="%.2f%%")
                         }
                     )
-        
+
         except Exception as e:
             st.error(f"Error generating frontier: {str(e)}")
             st.info("Ensure portfolio has sufficient data and valid returns.")

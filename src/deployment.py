@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -64,7 +64,7 @@ class HealthChecker:
                 name="disk_space",
                 status=status,
                 message=message,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
                 details={
                     "total_gb": usage.total / (1024**3),
                     "used_gb": usage.used / (1024**3),
@@ -77,7 +77,7 @@ class HealthChecker:
                 name="disk_space",
                 status=HealthStatus.UNHEALTHY,
                 message=f"Failed to check disk space: {e}",
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             )
 
     @staticmethod
@@ -101,7 +101,7 @@ class HealthChecker:
                 name="memory",
                 status=status,
                 message=message,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
                 details={
                     "total_gb": memory.total / (1024**3),
                     "used_gb": memory.used / (1024**3),
@@ -114,7 +114,7 @@ class HealthChecker:
                 name="memory",
                 status=HealthStatus.UNHEALTHY,
                 message=f"Failed to check memory: {e}",
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             )
 
     @staticmethod
@@ -138,7 +138,7 @@ class HealthChecker:
                 name="cpu",
                 status=status,
                 message=message,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
                 details={
                     "percent": cpu_percent,
                     "load_1m": load_avg[0],
@@ -151,7 +151,7 @@ class HealthChecker:
                 name="cpu",
                 status=HealthStatus.UNHEALTHY,
                 message=f"Failed to check CPU: {e}",
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             )
 
     @staticmethod
@@ -171,7 +171,7 @@ class HealthChecker:
                 name="processes",
                 status=status,
                 message=message,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
                 details={"count": process_count},
             )
         except Exception as e:
@@ -179,7 +179,7 @@ class HealthChecker:
                 name="processes",
                 status=HealthStatus.UNHEALTHY,
                 message=f"Failed to check processes: {e}",
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             )
 
     @staticmethod

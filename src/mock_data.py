@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
 
 import pandas as pd
 
 
 def generate_mock_portfolio_data() -> pd.DataFrame:
     """Generate mock portfolio prediction data for dashboard testing.
-    
+
     Returns:
-        DataFrame with columns: ticker, as_of_date, predicted_price, predicted_return, 
+        DataFrame with columns: ticker, as_of_date, predicted_price, predicted_return,
         portfolio_weight, created_at, actual_prices_last_month (as JSON strings)
     """
     tickers = ["AMD", "MSFT", "AAPL", "TSLA", "AMZN", "NVDA", "META", "GOOG", "TSM", "JPM", "NFLX", "PLTR"]
-    
+
     # Predicted prices from the pipeline
     predicted_prices = {
         "AMD": 368.05,
@@ -32,7 +31,7 @@ def generate_mock_portfolio_data() -> pd.DataFrame:
         "NFLX": 94.96,
         "PLTR": 135.33,
     }
-    
+
     predicted_returns = {
         "AMD": -0.2573,
         "MSFT": 0.0375,
@@ -47,7 +46,7 @@ def generate_mock_portfolio_data() -> pd.DataFrame:
         "NFLX": 0.0871,
         "PLTR": 0.0213,
     }
-    
+
     portfolio_weights = {
         "AMD": 0.2351,
         "MSFT": 0.0500,
@@ -62,11 +61,11 @@ def generate_mock_portfolio_data() -> pd.DataFrame:
         "NFLX": 0.0500,
         "PLTR": 0.0500,
     }
-    
+
     # Generate price history (last 20 trading days with noise)
     import numpy as np
     np.random.seed(42)
-    
+
     base_prices = {
         "AMD": 495.0,
         "MSFT": 412.5,
@@ -81,25 +80,25 @@ def generate_mock_portfolio_data() -> pd.DataFrame:
         "NFLX": 87.0,
         "PLTR": 132.5,
     }
-    
+
     records = []
     today = pd.Timestamp.now().normalize()
-    
+
     # Create 5 historical records with different dates
     for day_offset in [4, 3, 2, 1, 0]:
         as_of_date = today - pd.Timedelta(days=day_offset)
-        
+
         for ticker in tickers:
             # Generate price history
             price_history = []
             base = base_prices[ticker]
-            for i in range(20):
+            for _i in range(20):
                 # Add random walk with drift
                 drift = -0.001 * predicted_returns[ticker]  # Reverse drift
                 noise = np.random.normal(0, 0.02)
                 base = base * (1 + drift + noise)
                 price_history.append(float(base))
-            
+
             records.append({
                 "ticker": ticker,
                 "as_of_date": as_of_date.date(),
@@ -109,25 +108,25 @@ def generate_mock_portfolio_data() -> pd.DataFrame:
                 "created_at": as_of_date,
                 "actual_prices_last_month": json.dumps(price_history),  # Store as JSON string
             })
-    
+
     df = pd.DataFrame(records)
     return df
 
 
 def save_mock_data_to_csv(output_path: str = "mock_predictions.csv") -> None:
     """Save mock data to CSV for manual Supabase import.
-    
+
     Args:
         output_path: Path to save CSV file
     """
     df = generate_mock_portfolio_data()
-    
+
     # Convert list to JSON string for CSV
     df_export = df.copy()
     df_export["actual_prices_last_month"] = df_export["actual_prices_last_month"].apply(
         lambda x: str(x)  # Convert list to string for CSV
     )
-    
+
     df_export.to_csv(output_path, index=False)
     print(f"Mock data saved to {output_path}")
 
@@ -140,5 +139,5 @@ if __name__ == "__main__":
     print(f"\nTotal records: {len(df)}")
     print(f"\nUnique tickers: {df['ticker'].nunique()}")
     print(f"Dates: {sorted(df['as_of_date'].unique())}")
-    
+
     save_mock_data_to_csv()

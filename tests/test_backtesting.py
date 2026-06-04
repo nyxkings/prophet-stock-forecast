@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
-
 import pytest
 
-from src.backtesting import BacktestResult, BacktestSummary, Backtester
+from src.backtesting import Backtester, BacktestResult, BacktestSummary
 
 
 class TestBacktestResult:

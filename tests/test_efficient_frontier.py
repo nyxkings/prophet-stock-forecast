@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -237,7 +235,7 @@ class TestGenerateFrontier:
         # Generally, returns should increase with risk (volatility)
         # But not strictly monotonic due to optimization
         points = result.frontier_points
-        avg_return_low_vol = np.mean(
+        np.mean(
             [p.expected_return for p in points[:5]]
         )
         avg_return_high_vol = np.mean(
@@ -390,7 +388,7 @@ class TestPlotFrontier:
         assert hasattr(result, 'frontier_points')
         assert hasattr(result, 'min_variance_portfolio')
         assert hasattr(result, 'max_sharpe_portfolio')
-        
+
         # Verify frontier points have required attributes
         for point in result.frontier_points:
             assert hasattr(point, 'volatility')

@@ -32,7 +32,6 @@ class RiskMetrics:
         """Convert to dictionary."""
         return {
             "var_95": self.var_95,
-            "var_95": self.var_95,
             "var_99": self.var_99,
             "cvar_95": self.cvar_95,
             "cvar_99": self.cvar_99,

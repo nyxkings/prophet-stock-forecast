@@ -1,25 +1,6 @@
 """Efficient frontier visualization for portfolio optimization."""
 
-from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
-
-import numpy as np
-import pandas as pd
-from scipy.optimize import minimize
-
-from src.risk_analytics import RiskAnalyzer
-
-
-@dataclass
-class PortfolioPoint:
-    """Single point on efficient frontier."""
-
-    risk_aversion: float  # Lambda parameter
-    volatility: float  # Portfolio standard deviation
-    expected_return: float  # Portfolio expected return
-    sharpe_ratio: float  # Sharpe ratio
     weights: dict[str, float]  # Portfolio weights
 
     def to_dict(self) -> dict[str, Any]:
@@ -233,8 +214,8 @@ class EfficientFrontier:
         """
         try:
             import plotly.graph_objects as go
-        except ImportError:
-            raise ImportError("plotly is required for frontier visualization")
+        except ImportError as err:
+            raise ImportError("plotly is required for frontier visualization") from err
 
         # Extract frontier data
         volatilities = [p.volatility for p in frontier_result.frontier_points]

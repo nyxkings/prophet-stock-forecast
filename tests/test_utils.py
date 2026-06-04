@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 import numpy as np
@@ -64,7 +64,7 @@ def create_correlated_portfolio(
 
     portfolio = {}
     dates = pd.bdate_range(start="2023-01-01", periods=num_days).date
-    
+
     for i, ticker in enumerate(tickers):
         prices = 100 * np.exp(np.cumsum(returns[:, i]))
         df = pd.DataFrame(
@@ -92,7 +92,7 @@ def assert_valid_weights(weights: dict[str, float], tolerance: float = 0.01) -> 
     """
     total = sum(weights.values())
     assert abs(total - 1.0) < tolerance, f"Weights sum to {total}, expected ~1.0"
-    
+
     for ticker, weight in weights.items():
         assert 0 <= weight <= 1, f"Weight for {ticker} is {weight}, should be [0,1]"
 
@@ -115,14 +115,14 @@ def assert_predictions_valid(
     """
     assert len(predictions) == len(tickers), "Prediction count mismatch"
     assert len(predicted_returns) == len(tickers), "Return prediction count mismatch"
-    
+
     for ticker in tickers:
         assert ticker in predictions, f"Missing prediction for {ticker}"
         assert ticker in predicted_returns, f"Missing return prediction for {ticker}"
-        
+
         price = predictions[ticker]
         ret = predicted_returns[ticker]
-        
+
         assert price > 0, f"Predicted price for {ticker} must be positive"
         assert -1 < ret < 10, f"Predicted return for {ticker} seems unrealistic: {ret}"
 
@@ -147,13 +147,13 @@ def compare_dataframes(
     """
     if df1.shape != df2.shape:
         return False
-    
+
     if not (df1.columns == df2.columns).all():
         return False
-    
+
     if not (df1.index == df2.index).all():
         return False
-    
+
     return np.allclose(df1.values, df2.values, rtol=rtol, atol=atol)
 
 
@@ -176,10 +176,10 @@ def assert_dataframe_properties(
         AssertionError: If properties don't match
     """
     assert len(df) >= min_rows, f"DataFrame has {len(df)} rows, expected at least {min_rows}"
-    
+
     if expected_columns:
         assert list(df.columns) == expected_columns, f"Column mismatch: {df.columns}"
-    
+
     if expected_index_name:
         assert df.index.name == expected_index_name, f"Index name is {df.index.name}, expected {expected_index_name}"
 
@@ -226,20 +226,20 @@ def create_test_result_dict(
     """
     if date is None:
         date = pd.Timestamp.now().date()
-    
+
     if predictions is None:
         predictions = {"AAPL": 150.0, "MSFT": 300.0}
-    
+
     if predicted_returns is None:
         predicted_returns = {k: 0.01 for k in predictions}
-    
+
     if weights is None:
         n = len(predictions)
         weights = {k: 1.0 / n for k in predictions}
-    
+
     if actual_prices_last_month is None:
         actual_prices_last_month = {k: [100.0 + i for i in range(20)] for k in predictions}
-    
+
     return {
         "date": date,
         "predictions": predictions,

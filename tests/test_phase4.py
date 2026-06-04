@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 import pytest
 
@@ -13,14 +12,11 @@ from src.alerts import (
     AlertManager,
     AlertMessage,
     AlertRule,
-    EmailAlerter,
     LogAlerter,
-    SlackAlerter,
 )
 from src.deployment import DeploymentUtils, HealthChecker, HealthStatus
 from src.monitoring import (
     ErrorSeverity,
-    JobError,
     JobExecution,
     JobHistoryManager,
     JobLogger,

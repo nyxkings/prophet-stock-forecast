@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 import numpy as np
@@ -152,7 +152,7 @@ class Backtester:
         try:
             import yfinance as yf
 
-            actual_data = yf.download(
+            yf.download(
                 " ".join(self.tickers),
                 start=start,
                 end=end,
@@ -160,7 +160,7 @@ class Backtester:
             )
         except Exception:
             # Fallback for single ticker or if download fails
-            actual_data = None
+            pass
 
         # Test each date
         test_dates = all_dates[::5]  # Test every 5 business days to speed up

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import smtplib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from email.mime.text import MIMEText
 from enum import Enum
 from typing import Any, Protocol
@@ -71,7 +71,7 @@ class AlertMessage:
         self.job = job
         self.message = message
         self.severity = severity
-        self.timestamp = datetime.utcnow().isoformat()
+        self.timestamp = datetime.now(UTC).isoformat()
 
     def format_email_body(self) -> str:
         """Format message for email."""
@@ -342,7 +342,7 @@ class AlertManager:
     def send_alert(self, message: AlertMessage) -> bool:
         """Send alert through all registered alerters."""
         success = False
-        for channel, alerter in self.alerters:
+        for _channel, alerter in self.alerters:
             if alerter.send(message):
                 success = True
 

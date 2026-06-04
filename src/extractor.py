@@ -24,7 +24,7 @@ def _process_ticker_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df[["Close"]].rename(columns={"Close": "Price"})
 
     # Compute daily returns and drop the first date
-    df["Returns"] = df["Price"].pct_change()
+    df["Returns"] = df["Price"].pct_change(fill_method=None)
     df = df.dropna()
 
     # Convert index to date type

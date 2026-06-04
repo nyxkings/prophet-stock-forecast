@@ -24,7 +24,6 @@ class TestSectorMapping:
 
     def test_get_ticker_sector_multiple_tickers(self):
         """Test sector mapping for multiple known tickers."""
-        tickers = ["MSFT", "JPM", "WMT"]
         sectors = {
             "MSFT": "Technology",
             "JPM": "Financials",

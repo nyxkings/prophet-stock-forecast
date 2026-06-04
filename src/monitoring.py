@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -34,7 +34,7 @@ class ErrorSeverity(str, Enum):
 class JobError:
     """Error record for job execution."""
 
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     severity: ErrorSeverity = ErrorSeverity.ERROR
     message: str = ""
     error_type: str = ""
@@ -95,7 +95,7 @@ class JobExecution:
     status: JobStatus
     metrics: JobMetrics
     result_summary: dict[str, Any] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -142,7 +142,7 @@ class JobExecution:
             status=JobStatus(data["status"]),
             metrics=metrics,
             result_summary=data.get("result_summary", {}),
-            created_at=data.get("created_at", datetime.utcnow().isoformat()),
+            created_at=data.get("created_at", datetime.now(UTC).isoformat()),
         )
 
 
@@ -153,13 +153,13 @@ class JobLogger:
         """Initialize job logger."""
         self.job_id = job_id
         self.run_date = run_date
-        self.metrics = JobMetrics(start_time=datetime.utcnow().isoformat())
+        self.metrics = JobMetrics(start_time=datetime.now(UTC).isoformat())
         self.status = JobStatus.PENDING
 
     def start(self) -> None:
         """Mark job as running."""
         self.status = JobStatus.RUNNING
-        self.metrics.start_time = datetime.utcnow().isoformat()
+        self.metrics.start_time = datetime.now(UTC).isoformat()
 
     def add_error(
         self,
@@ -193,7 +193,7 @@ class JobLogger:
 
     def finish(self, success: bool = True, result_summary: dict[str, Any] | None = None) -> JobExecution:
         """Finish job logging."""
-        self.metrics.end_time = datetime.utcnow().isoformat()
+        self.metrics.end_time = datetime.now(UTC).isoformat()
 
         start = datetime.fromisoformat(self.metrics.start_time)
         end = datetime.fromisoformat(self.metrics.end_time)
@@ -226,7 +226,7 @@ class JobHistoryManager:
 
     def get_recent_jobs(self, days: int = 7) -> list[JobExecution]:
         """Get jobs from last N days."""
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         return [
             job
             for job in self.history
@@ -268,7 +268,7 @@ class JobHistoryManager:
 
     def cleanup_old_records(self) -> int:
         """Remove jobs older than max_history_days."""
-        cutoff = datetime.utcnow() - timedelta(days=self.max_history_days)
+        cutoff = datetime.now(UTC) - timedelta(days=self.max_history_days)
         original_len = len(self.history)
 
         self.history = [

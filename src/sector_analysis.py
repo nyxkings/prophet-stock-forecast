@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-
 # Global sector mapping for common stocks
 TICKER_SECTOR_MAP = {
     # Technology

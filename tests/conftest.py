@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -13,7 +12,7 @@ import pytest
 def sample_ticker_data() -> dict[str, pd.DataFrame]:
     """Create sample ticker data for testing."""
     dates = pd.date_range(start="2023-01-01", end="2023-12-31", freq="B")
-    
+
     sample_data = {}
     for ticker in ["AAPL", "MSFT", "GOOGL"]:
         prices = 100 + (hash(ticker) % 50)  # Vary starting price by ticker
@@ -23,7 +22,7 @@ def sample_ticker_data() -> dict[str, pd.DataFrame]:
         df = pd.DataFrame(data, index=dates)
         df.index.name = "Date"
         sample_data[ticker] = df
-    
+
     return sample_data
 
 
@@ -31,12 +30,12 @@ def sample_ticker_data() -> dict[str, pd.DataFrame]:
 def sample_processed_data() -> dict[str, pd.DataFrame]:
     """Create sample processed data with Price and Returns columns."""
     dates = pd.date_range(start="2023-01-01", end="2023-12-31", freq="B").date
-    
+
     processed_data = {}
     for ticker in ["AAPL", "MSFT", "GOOGL"]:
         prices = [100 + i * 0.5 for i in range(len(dates))]
         returns = [0.001 + (i % 100) * 0.00001 for i in range(len(dates))]
-        
+
         data = {
             "Price": prices,
             "Returns": returns,
@@ -44,7 +43,7 @@ def sample_processed_data() -> dict[str, pd.DataFrame]:
         df = pd.DataFrame(data, index=dates)
         df.index.name = "Date"
         processed_data[ticker] = df
-    
+
     return processed_data
 
 
@@ -91,11 +90,11 @@ def mock_yfinance(sample_ticker_data):
         def create_mock_ticker(ticker: str):
             mock_obj = MagicMock()
             mock_obj.history.return_value = sample_ticker_data.get(
-                ticker, 
+                ticker,
                 pd.DataFrame({"Close": [100]})
             )
             return mock_obj
-        
+
         mock_ticker.side_effect = create_mock_ticker
         yield mock_ticker
 
@@ -106,16 +105,16 @@ def mock_supabase():
     with patch("src.database.create_client") as mock_create:
         mock_client = MagicMock()
         mock_create.return_value = mock_client
-        
+
         # Mock the insert chain
         mock_table = MagicMock()
         mock_insert = MagicMock()
-        mock_execute = MagicMock()
-        
+        MagicMock()
+
         mock_client.table.return_value = mock_table
         mock_table.insert.return_value = mock_insert
         mock_insert.execute.return_value = MagicMock(data=[])
-        
+
         yield mock_client
 
 
@@ -125,10 +124,10 @@ def mock_prophet_model(sample_predictions, sample_actual_prices):
     with patch("src.main.ProphetModel") as mock_prophet_class:
         mock_instance = MagicMock()
         mock_prophet_class.return_value = mock_instance
-        
+
         predictions, predicted_returns = sample_predictions
         mock_instance.predict_for_tickers.return_value = (predictions, predicted_returns)
-        
+
         yield mock_instance
 
 

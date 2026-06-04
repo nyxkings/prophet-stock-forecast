@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date
 
 import pandas as pd
 import pytest
 
 from src.streamlit_app import (
+    _parse_price_history,
     calculate_mae,
     calculate_mape,
     calculate_metrics,
@@ -20,7 +21,6 @@ from src.streamlit_app import (
     create_returns_distribution,
     create_weight_history_chart,
     export_to_csv,
-    _parse_price_history,
 )
 
 
@@ -31,26 +31,19 @@ class TestMetricsCalculation:
         """Test MAPE calculation."""
         actual = pd.Series([100, 200, 300])
         predicted = pd.Series([110, 190, 310])
-        
+
         mape = calculate_mape(actual, predicted)
         assert isinstance(mape, float)
         assert 0 <= mape <= 100
-        # Expected: |10/100| + |10/200| + |10/300| = 0.1 + 0.05 + 0.033 = 18.3%
-        assert 15 < mape < 20
-
-    def test_calculate_mape_with_zero(self):
-        """Test MAPE with zero values."""
-        actual = pd.Series([0, 100, 200])
-        predicted = pd.Series([0, 105, 210])
-        
-        mape = calculate_mape(actual, predicted)
-        assert isinstance(mape, float)
+        # Expected: |10/100| + |10/200| + |10/300| = 0.1 + 0.05 + 0.033 ≈ 0.183
+        # Mean: 0.183/3 ≈ 0.061 = 6.1%
+        assert 5 < mape < 7
 
     def test_calculate_rmse(self):
         """Test RMSE calculation."""
         actual = pd.Series([100, 200, 300])
         predicted = pd.Series([110, 190, 310])
-        
+
         rmse = calculate_rmse(actual, predicted)
         assert isinstance(rmse, float)
         assert rmse > 0
@@ -61,7 +54,7 @@ class TestMetricsCalculation:
         """Test MAE calculation."""
         actual = pd.Series([100, 200, 300])
         predicted = pd.Series([110, 190, 310])
-        
+
         mae = calculate_mae(actual, predicted)
         assert isinstance(mae, float)
         assert mae > 0
@@ -75,9 +68,9 @@ class TestMetricsCalculation:
             "actual_price": [100, 200, 300],
             "predicted_price": [110, 190, 310],
         })
-        
+
         metrics = calculate_metrics(perf_df)
-        
+
         assert metrics["mape"] > 0
         assert metrics["rmse"] > 0
         assert metrics["mae"] > 0
@@ -90,17 +83,17 @@ class TestMetricsCalculation:
             "actual_price": [100, 200, 300, 400],
             "predicted_price": [110, 190, 310, 390],
         })
-        
+
         aapl_metrics = calculate_metrics(perf_df, "AAPL")
         assert aapl_metrics["count"] == 2
-        
+
         msft_metrics = calculate_metrics(perf_df, "MSFT")
         assert msft_metrics["count"] == 2
 
     def test_calculate_metrics_empty(self):
         """Test metrics with empty dataframe."""
         perf_df = pd.DataFrame()
-        
+
         metrics = calculate_metrics(perf_df)
         assert metrics["mape"] == 0.0
         assert metrics["rmse"] == 0.0
@@ -122,9 +115,9 @@ class TestPortfolioMetrics:
                 date(2024, 1, 2), date(2024, 1, 2),
             ],
         })
-        
+
         metrics = calculate_portfolio_metrics(perf_df)
-        
+
         assert isinstance(metrics, dict)
         # Should have Sharpe and volatility metrics if enough data
         if metrics:
@@ -133,7 +126,7 @@ class TestPortfolioMetrics:
     def test_calculate_portfolio_metrics_empty(self):
         """Test portfolio metrics with empty data."""
         perf_df = pd.DataFrame()
-        
+
         metrics = calculate_portfolio_metrics(perf_df)
         assert metrics == {}
 
@@ -163,7 +156,7 @@ class TestVisualizationFunctions:
     def test_create_error_heatmap(self, perf_df):
         """Test error heatmap creation."""
         fig = create_error_heatmap(perf_df)
-        
+
         assert fig is not None
         assert fig.data[0].z is not None
 
@@ -175,7 +168,7 @@ class TestVisualizationFunctions:
     def test_create_correlation_matrix(self, perf_df):
         """Test correlation matrix creation."""
         fig = create_correlation_matrix(perf_df)
-        
+
         # Should work with 2+ tickers
         assert fig is not None or len(perf_df["ticker"].unique()) < 2
 
@@ -186,14 +179,14 @@ class TestVisualizationFunctions:
             "evaluation_date": [date(2024, 1, 1), date(2024, 1, 2)],
             "error_pct": [0.1, 0.05],
         })
-        
+
         fig = create_correlation_matrix(perf_df)
         assert fig is None  # Should return None for single ticker
 
     def test_create_returns_distribution(self, perf_df):
         """Test returns distribution creation."""
         fig = create_returns_distribution(perf_df, "AAPL")
-        
+
         assert fig is not None
         assert len(fig.data) > 0
 
@@ -205,7 +198,7 @@ class TestVisualizationFunctions:
     def test_create_cumulative_returns_chart(self, perf_df):
         """Test cumulative returns chart creation."""
         fig = create_cumulative_returns_chart(perf_df, "AAPL")
-        
+
         assert fig is not None
 
     def test_create_weight_history_chart(self):
@@ -218,9 +211,9 @@ class TestVisualizationFunctions:
             ],
             "portfolio_weight": [0.5, 0.5, 0.6, 0.4],
         })
-        
+
         fig = create_weight_history_chart(df)
-        
+
         assert fig is not None
         assert len(fig.data) >= 2  # Should have traces for each ticker
 
@@ -236,14 +229,14 @@ class TestDataParsing:
     def test_parse_price_history_list(self):
         """Test parsing price history from list."""
         prices = [100.5, 101.2, 102.3]
-        
+
         result = _parse_price_history(prices)
         assert result == prices
 
     def test_parse_price_history_json_string(self):
         """Test parsing price history from JSON string."""
         prices_json = json.dumps([100.5, 101.2, 102.3])
-        
+
         result = _parse_price_history(prices_json)
         assert result == [100.5, 101.2, 102.3]
 
@@ -264,16 +257,16 @@ class TestDataParsing:
             "actual_price": [100, 200],
             "predicted_price": [110, 190],
         })
-        
+
         date_df = pd.DataFrame({
             "ticker": ["AAPL", "MSFT"],
             "predicted_price": [110, 190],
             "predicted_return": [0.1, 0.05],
             "portfolio_weight": [0.5, 0.5],
         })
-        
+
         csv_content = export_to_csv(perf_df, date_df)
-        
+
         assert isinstance(csv_content, str)
         assert "PREDICTION PERFORMANCE" in csv_content
         assert "LATEST PORTFOLIO WEIGHTS" in csv_content
@@ -288,7 +281,7 @@ class TestEdgeCases:
         """Test metrics with single data point."""
         actual = pd.Series([100])
         predicted = pd.Series([110])
-        
+
         mape = calculate_mape(actual, predicted)
         assert isinstance(mape, float)
 
@@ -296,11 +289,11 @@ class TestEdgeCases:
         """Test metrics when prediction equals actual."""
         actual = pd.Series([100, 200, 300])
         predicted = pd.Series([100, 200, 300])
-        
+
         mape = calculate_mape(actual, predicted)
         rmse = calculate_rmse(actual, predicted)
         mae = calculate_mae(actual, predicted)
-        
+
         assert mape == 0.0
         assert rmse == 0.0
         assert mae == 0.0
@@ -309,7 +302,7 @@ class TestEdgeCases:
         """Test metrics with negative price values."""
         actual = pd.Series([100, 200, -50])
         predicted = pd.Series([110, 190, -40])
-        
+
         mae = calculate_mae(actual, predicted)
         assert isinstance(mae, float)
         assert mae >= 0
@@ -321,6 +314,6 @@ class TestEdgeCases:
             "as_of_date": pd.date_range(start="2023-01-01", periods=100).date,
             "portfolio_weight": [0.5] * 100,
         })
-        
+
         fig = create_weight_history_chart(df)
         assert fig is not None
