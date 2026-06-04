@@ -1,6 +1,18 @@
 """Efficient frontier visualization for portfolio optimization."""
 
-            ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+from dataclasses import dataclass
+from typing import Any
+import pandas as pd
+
+
+@dataclass
+class PortfolioPoint:
+    """A point on the efficient frontier."""
+
+    risk_aversion: float
+    volatility: float
+    expected_return: float
+    sharpe_ratio: float
     weights: dict[str, float]  # Portfolio weights
 
     def to_dict(self) -> dict[str, Any]:
