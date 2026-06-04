@@ -1,6 +1,6 @@
 """Efficient frontier visualization for portfolio optimization."""
 
-
+            ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
     weights: dict[str, float]  # Portfolio weights
 
     def to_dict(self) -> dict[str, Any]:
