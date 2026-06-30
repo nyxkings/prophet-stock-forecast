@@ -47,6 +47,27 @@ class TestFullPipeline:
             assert result["weights"] == sample_optimization_result
             assert isinstance(result["date"], date)
 
+    def test_run_optimisation_passes_prophet_returns_to_optimiser(
+        self,
+        mock_yfinance,
+        mock_prophet_model,
+        sample_predictions,
+        temp_env_vars,
+    ):
+        """Prophet predicted_returns must be passed as MPT expected returns (mu)."""
+        with patch("src.main.optimize_portfolio_mean_variance") as mock_optimize:
+            mock_optimize.return_value = {"AAPL": 0.34, "MSFT": 0.33, "GOOGL": 0.33}
+
+            run_optimisation(
+                tickers=["AAPL", "MSFT", "GOOGL"],
+                start_date="2023-01-01",
+                end_date="2023-12-31",
+            )
+
+            mock_optimize.assert_called_once()
+            call_args = mock_optimize.call_args
+            assert call_args.kwargs["expected_returns"] == sample_predictions[1]
+
     def test_run_optimisation_with_database_save(
         self,
         mock_yfinance,

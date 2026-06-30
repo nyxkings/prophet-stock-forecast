@@ -12,7 +12,7 @@ from src.database import save_results_to_supabase
 from src.extractor import extract_data
 from src.model import ProphetModel
 from src.optimiser import optimize_portfolio_mean_variance
-from src.processor import append_predictions, collect_recent_prices, preprocess_data
+from src.processor import collect_recent_prices, preprocess_data
 from src.settings import END_DATE, PORTFOLIO_TICKERS, START_DATE
 
 # Set up logging
@@ -67,14 +67,14 @@ def run_optimisation(
     # 4. Collect actual price history for the past month
     actual_prices_last_month = collect_recent_prices(portfolio_data)
 
-    # 5. Append predictions to historical data
-    predicted_data = append_predictions(portfolio_data, predictions, predicted_returns)
-
-    # 6. Optimise portfolio using predicted returns as expected returns
+    # 5. Optimise portfolio: Prophet forecasts as mu, historical returns for covariance
     logger.info("Calculating optimal portfolio allocation...")
-    weights_dict = optimize_portfolio_mean_variance(predicted_data)
+    weights_dict = optimize_portfolio_mean_variance(
+        portfolio_data,
+        expected_returns=predicted_returns,
+    )
 
-    # 7. Log results
+    # 6. Log results
     logger.info("Portfolio Optimisation Results")
     logger.info(f"Date: {as_of_date}")
 

@@ -162,6 +162,29 @@ class TestBacktester:
         assert result.price_mape >= 0
         assert result.portfolio_predicted_return == 0.025
 
+    def test_calculate_result_accepts_predictions_key(self):
+        """Backtester should read prices from run_optimisation's predictions key."""
+        bt = Backtester()
+
+        prediction = {
+            "predictions": {"AAPL": 150.0, "MSFT": 300.0},
+            "predicted_returns": {"AAPL": 0.02, "MSFT": 0.03},
+            "weights": {"AAPL": 0.5, "MSFT": 0.5},
+        }
+
+        actual_prices = {"AAPL": 151.0, "MSFT": 298.0}
+        actual_returns = {"AAPL": 0.0067, "MSFT": -0.0067}
+
+        result = bt._calculate_result(
+            "2026-05-14",
+            prediction,
+            actual_prices,
+            actual_returns,
+        )
+
+        assert result.predicted_prices["AAPL"] == 150.0
+        assert result.price_mape > 0
+
     def test_calculate_result_with_errors(self):
         """Test result calculation with prediction errors."""
         bt = Backtester()

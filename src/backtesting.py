@@ -208,7 +208,7 @@ class Backtester:
                                         tomorrow_price - today_price
                                     ) / today_price
                             else:
-                                actual_prices[ticker] = result["predicted_prices"].get(
+                                actual_prices[ticker] = result.get("predictions", {}).get(
                                     ticker, 0
                                 )
                                 actual_returns[ticker] = result[
@@ -242,7 +242,9 @@ class Backtester:
         actual_returns: dict[str, float],
     ) -> BacktestResult:
         """Calculate result for a single backtest date."""
-        predicted_prices = prediction.get("predicted_prices", {})
+        predicted_prices = prediction.get("predicted_prices") or prediction.get(
+            "predictions", {}
+        )
         predicted_returns = prediction.get("predicted_returns", {})
         predicted_weights = prediction.get("weights", {})
 

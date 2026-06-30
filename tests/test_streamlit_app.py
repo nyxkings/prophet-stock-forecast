@@ -15,6 +15,7 @@ from src.streamlit_app import (
     calculate_metrics,
     calculate_portfolio_metrics,
     calculate_rmse,
+    compute_prediction_performance,
     create_correlation_matrix,
     create_cumulative_returns_chart,
     create_error_heatmap,
@@ -114,14 +115,34 @@ class TestPortfolioMetrics:
                 date(2024, 1, 1), date(2024, 1, 1),
                 date(2024, 1, 2), date(2024, 1, 2),
             ],
+            "portfolio_weight": [0.6, 0.4, 0.6, 0.4],
+            "predicted_return": [0.02, 0.03, 0.01, 0.02],
+            "actual_return": [0.01, 0.02, 0.01, 0.02],
         })
 
         metrics = calculate_portfolio_metrics(perf_df)
 
         assert isinstance(metrics, dict)
-        # Should have Sharpe and volatility metrics if enough data
-        if metrics:
-            assert "sharpe_actual" in metrics or len(metrics) == 0
+        assert "sharpe_actual" in metrics
+        assert "volatility_actual" in metrics
+
+    def test_compute_prediction_performance_includes_weighted_fields(self):
+        """Performance records should include weights and returns for portfolio evaluation."""
+        data = pd.DataFrame({
+            "ticker": ["AAPL", "AAPL"],
+            "as_of_date": [date(2024, 1, 1), date(2024, 1, 2)],
+            "predicted_price": [100.0, 101.0],
+            "predicted_return": [0.02, 0.01],
+            "portfolio_weight": [1.0, 1.0],
+            "actual_prices_last_month": [[99.0, 100.0], [100.0, 102.0]],
+        })
+
+        perf_df = compute_prediction_performance(data.to_json(orient="records", date_format="iso"))
+
+        assert not perf_df.empty
+        assert "portfolio_weight" in perf_df.columns
+        assert "predicted_return" in perf_df.columns
+        assert "actual_return" in perf_df.columns
 
     def test_calculate_portfolio_metrics_empty(self):
         """Test portfolio metrics with empty data."""

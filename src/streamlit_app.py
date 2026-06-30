@@ -77,18 +77,30 @@ def calculate_cumulative_returns(perf_df: pd.DataFrame, ticker: str) -> pd.DataF
 
 
 def calculate_portfolio_metrics(perf_df: pd.DataFrame) -> dict[str, float]:
-    """Calculate portfolio-level metrics."""
+    """Calculate portfolio-level metrics using optimised weights when available."""
     if perf_df.empty:
         return {}
 
-    # Group by evaluation date and sum returns
-    daily_returns = perf_df.groupby("evaluation_date").apply(
-        lambda x: pd.Series({
-            "actual_return": x["actual_price"].pct_change().mean(),
-            "predicted_return": x["predicted_price"].pct_change().mean(),
-        }),
-        include_groups=False
-    )
+    if {"portfolio_weight", "actual_return", "predicted_return"}.issubset(perf_df.columns):
+        daily_returns = perf_df.groupby("evaluation_date").apply(
+            lambda x: pd.Series(
+                {
+                    "actual_return": float((x["portfolio_weight"] * x["actual_return"]).sum()),
+                    "predicted_return": float(
+                        (x["portfolio_weight"] * x["predicted_return"]).sum()
+                    ),
+                }
+            ),
+            include_groups=False,
+        )
+    else:
+        daily_returns = perf_df.groupby("evaluation_date").apply(
+            lambda x: pd.Series({
+                "actual_return": x["actual_price"].pct_change().mean(),
+                "predicted_return": x["predicted_price"].pct_change().mean(),
+            }),
+            include_groups=False
+        )
 
     metrics = {}
     if not daily_returns.empty:
@@ -231,6 +243,8 @@ def compute_prediction_performance(data_json: str) -> pd.DataFrame:
                     "predicted_price": float(current["predicted_price"]),
                     "actual_price": actual_next_price,
                     "error": actual_next_price - float(current["predicted_price"]),
+                    "portfolio_weight": float(current.get("portfolio_weight", 0.0)),
+                    "predicted_return": float(current.get("predicted_return", 0.0)),
                 }
             )
 
@@ -240,6 +254,9 @@ def compute_prediction_performance(data_json: str) -> pd.DataFrame:
 
     perf_df["absolute_error"] = perf_df["error"].abs()
     perf_df["error_pct"] = perf_df["error"] / perf_df["predicted_price"]
+    perf_df["actual_return"] = (
+        perf_df["actual_price"] - perf_df["predicted_price"]
+    ) / perf_df["predicted_price"]
     return perf_df
 
 
