@@ -7,9 +7,27 @@ from scipy.optimize import minimize
 from src.settings import MAXIMUM_ALLOCATION, MINIMUM_ALLOCATION, RISK_AVERSION
 
 
+def _filter_returns_data(
+    data_dict: dict[str, pd.DataFrame],
+    lookback_days: int,
+) -> dict[str, pd.DataFrame]:
+    """Return per-ticker DataFrames trimmed to the lookback window."""
+    filtered_data: dict[str, pd.DataFrame] = {}
+    for ticker, df in data_dict.items():
+        filtered_df = df.tail(lookback_days)
+        if len(filtered_df) > 0:
+            filtered_data[ticker] = filtered_df
+
+    if not filtered_data:
+        return data_dict
+
+    return filtered_data
+
+
 def calculate_mean_variance(
     data_dict: dict[str, pd.DataFrame],
     lookback_days: int = 252,  # ~1 year of trading days
+    expected_returns: dict[str, float] | None = None,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """
     Calculate mean returns and covariance matrix from Returns columns.
@@ -21,29 +39,36 @@ def calculate_mean_variance(
             is a DataFrame containing at least a "Returns" column representing
             periodic returns for that asset.
         lookback_days: Number of trading days to look back (default: 252)
+        expected_returns: Optional per-ticker expected returns used as mu.
+            When provided, covariance is still computed from historical returns only.
 
     Returns:
         Tuple containing:
         - mean_returns: pd.Series of mean returns for each ticker, indexed by ticker
         - cov_matrix: pd.DataFrame covariance matrix of returns across all tickers
+
+    Raises:
+        ValueError: If expected_returns keys do not match data_dict keys exactly.
     """
-    # For each ticker, take the last N days
-    filtered_data = {}
-    for ticker, df in data_dict.items():
-        # Take last N rows (most recent data)
-        filtered_df = df.tail(lookback_days)
-        if len(filtered_df) > 0:
-            filtered_data[ticker] = filtered_df
+    filtered_data = _filter_returns_data(data_dict, lookback_days)
 
-    if not filtered_data:
-        # Fallback: use all data if filtering leaves nothing
-        filtered_data = data_dict
-
-    # Build returns DataFrame from filtered data
+    # Build returns DataFrame from filtered historical data
     returns_df = pd.DataFrame({ticker: df["Returns"] for ticker, df in filtered_data.items()})
-
-    mean_returns = returns_df.mean()
     cov_matrix = returns_df.cov()
+
+    if expected_returns is not None:
+        data_tickers = set(data_dict.keys())
+        expected_tickers = set(expected_returns.keys())
+        if data_tickers != expected_tickers:
+            missing = sorted(data_tickers - expected_tickers)
+            extra = sorted(expected_tickers - data_tickers)
+            raise ValueError(
+                "expected_returns keys must match data_dict keys exactly. "
+                f"Missing: {missing or 'none'}. Extra: {extra or 'none'}."
+            )
+        mean_returns = pd.Series(expected_returns)[list(data_dict.keys())]
+    else:
+        mean_returns = returns_df.mean()
 
     return mean_returns, cov_matrix
 
@@ -53,6 +78,7 @@ def optimize_portfolio_mean_variance(
     minimum_allocation: float = MINIMUM_ALLOCATION,
     maximum_allocation: float = MAXIMUM_ALLOCATION,
     risk_aversion: float = RISK_AVERSION,
+    expected_returns: dict[str, float] | None = None,
 ) -> dict[str, float]:
     """
     Optimise portfolio using mean-variance (maximise return - risk_penalty).
@@ -62,14 +88,16 @@ def optimize_portfolio_mean_variance(
         minimum_allocation: Minimum allocation for each asset (default: MINIMUM_ALLOCATION)
         maximum_allocation: Maximum allocation for each asset (default: MAXIMUM_ALLOCATION)
         risk_aversion: Risk-aversion coefficient (lambda) (default: RISK_AVERSION)
+        expected_returns: Optional per-ticker expected returns used as mu. When None,
+            mu is the historical mean of returns in data_dict.
 
     Returns:
         Dictionary mapping ticker to optimal weight, where weights sum to 1.0
 
     Raises:
-        ValueError: If optimisation fails
+        ValueError: If optimisation fails or expected_returns keys do not match tickers
     """
-    mu, cov = calculate_mean_variance(data_dict)
+    mu, cov = calculate_mean_variance(data_dict, expected_returns=expected_returns)
     tickers = list(data_dict.keys())
     num_assets = len(tickers)
 

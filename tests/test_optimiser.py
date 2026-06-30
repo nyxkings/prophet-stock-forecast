@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.optimiser import (
     calculate_mean_variance,
@@ -102,3 +103,75 @@ class TestPortfolioOptimisation:
         assert np.isclose(sum(optimal_weights.values()), 1.0, rtol=1e-5)
         assert all(w >= min_allocation for w in optimal_weights.values())
         assert all(w <= 1.0 for w in optimal_weights.values())
+
+
+class TestExpectedReturns:
+    """Test optional Prophet-style expected returns as mu."""
+
+    @staticmethod
+    def _sample_data_dict() -> dict[str, pd.DataFrame]:
+        dates = pd.date_range("2024-01-01", periods=100, freq="D")
+        return {
+            "ASSET1": pd.DataFrame(
+                {
+                    "Price": 100 + np.arange(100) * 0.1,
+                    "Returns": np.full(100, 0.001),
+                },
+                index=[d.date() for d in dates],
+            ),
+            "ASSET2": pd.DataFrame(
+                {
+                    "Price": 50 + np.arange(100) * 0.05,
+                    "Returns": np.full(100, 0.002),
+                },
+                index=[d.date() for d in dates],
+            ),
+        }
+
+    def test_calculate_mean_variance_uses_expected_returns_when_provided(self) -> None:
+        """When expected_returns is set, mu matches it and cov uses historical data only."""
+        data_dict = self._sample_data_dict()
+        expected_returns = {"ASSET1": 0.05, "ASSET2": -0.02}
+
+        mean_returns, cov_matrix = calculate_mean_variance(
+            data_dict,
+            expected_returns=expected_returns,
+        )
+
+        historical_mean, historical_cov = calculate_mean_variance(data_dict)
+
+        assert mean_returns["ASSET1"] == 0.05
+        assert mean_returns["ASSET2"] == -0.02
+        assert not np.isclose(mean_returns["ASSET1"], historical_mean["ASSET1"])
+        pd.testing.assert_frame_equal(cov_matrix, historical_cov)
+
+    def test_optimize_weights_shift_when_expected_returns_provided(self) -> None:
+        """Different mu with the same historical covariance should change weights."""
+        data_dict = self._sample_data_dict()
+
+        weights_historical = optimize_portfolio_mean_variance(data_dict)
+        weights_forecast = optimize_portfolio_mean_variance(
+            data_dict,
+            expected_returns={"ASSET1": 0.05, "ASSET2": -0.02},
+        )
+
+        assert np.isclose(sum(weights_historical.values()), 1.0, rtol=1e-5)
+        assert np.isclose(sum(weights_forecast.values()), 1.0, rtol=1e-5)
+        assert weights_historical != weights_forecast
+        assert weights_forecast["ASSET1"] > weights_historical["ASSET1"]
+
+    def test_expected_returns_keys_must_match_tickers(self) -> None:
+        """Mismatched expected_returns keys should raise ValueError."""
+        data_dict = self._sample_data_dict()
+
+        with pytest.raises(ValueError, match="expected_returns keys must match"):
+            calculate_mean_variance(
+                data_dict,
+                expected_returns={"ASSET1": 0.05},
+            )
+
+        with pytest.raises(ValueError, match="expected_returns keys must match"):
+            calculate_mean_variance(
+                data_dict,
+                expected_returns={"ASSET1": 0.05, "ASSET2": -0.02, "ASSET3": 0.01},
+            )
