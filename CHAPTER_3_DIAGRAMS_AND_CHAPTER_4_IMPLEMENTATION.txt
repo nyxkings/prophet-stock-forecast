@@ -1,0 +1,836 @@
+================================================================================
+PROPhet FORECASTING FOR PORTFOLIO OPTIMISATION
+CHAPTER 3 DIAGRAMS + CHAPTER 4 IMPLEMENTATION DRAFT
+Author: Chinda Ada
+Generated for: CHINDA_ProjectReport.docx
+================================================================================
+
+This file contains:
+  PART A — Detailed diagrams for all Chapter 3 figures (3.1 to 3.4)
+  PART B — Full Chapter 4 (Implementation) draft with screenshot guidance
+
+All diagrams and implementation text are based on the ACTUAL codebase in:
+  Prophet-Forecasting-For-Portfolio-Optimisation/
+
+Portfolio tickers in code (src/settings.py):
+  AMD, MSFT, AAPL, TSLA, AMZN, NVDA, META, GOOG, TSM, JPM, NFLX, PLTR
+
+================================================================================
+PART A — CHAPTER 3 DETAILED DIAGRAMS
+================================================================================
+
+Use the diagrams below to replace or recreate Figures 3.1–3.4 in your report.
+You can paste the Mermaid blocks into https://mermaid.live to export PNG/SVG
+images for Word, or redraw them in draw.io / PowerPoint using these layouts.
+
+--------------------------------------------------------------------------------
+FIGURE 3.1 — SYSTEM ARCHITECTURE (Five-Layer Modular Design)
+--------------------------------------------------------------------------------
+
+CAPTION (for your report):
+"Figure 3.1: Layered system architecture of the Prophet-based portfolio
+optimisation platform. The design separates user interaction, orchestration,
+data processing, analytics, and persistence into independent modules."
+
+DESCRIPTION:
+The system follows five layers. Each layer maps to specific files in the
+project repository.
+
+MERMAID DIAGRAM (copy into mermaid.live to export as image):
+
+```mermaid
+flowchart TB
+    subgraph L1["Layer 1: User Interface"]
+        UI1["Streamlit Dashboard<br/>src/streamlit_app.py"]
+        UI2["CLI Entry Point<br/>src/main.py → main()"]
+        UI3["Admin Tools<br/>streamlit_admin.py"]
+    end
+
+    subgraph L2["Layer 2: Application Orchestration"]
+        ORCH["run_optimisation()<br/>src/main.py"]
+    end
+
+    subgraph L3["Layer 3: Data Processing"]
+        EXT["Data Extraction<br/>src/extractor.py<br/>(yfinance)"]
+        PROC["Data Preprocessing<br/>src/processor.py<br/>(align dates, returns)"]
+    end
+
+    subgraph L4["Layer 4: Forecasting & Optimisation"]
+        MOD["Prophet Forecasting<br/>src/model.py<br/>ProphetModel class"]
+        OPT["Mean-Variance Optimiser<br/>src/optimiser.py<br/>(SciPy SLSQP)"]
+        RISK["Risk Analytics<br/>src/risk_analytics.py"]
+        BT["Backtesting<br/>src/backtesting.py"]
+        EF["Efficient Frontier<br/>src/efficient_frontier.py"]
+    end
+
+    subgraph L5["Layer 5: Storage"]
+        DB["Supabase / PostgreSQL<br/>src/database.py<br/>table: stock_optimisation_store"]
+    end
+
+    subgraph CFG["Configuration (cross-cutting)"]
+        SET["src/settings.py<br/>tickers, risk params, Prophet params"]
+    end
+
+    UI1 --> DB
+    UI2 --> ORCH
+    ORCH --> EXT
+    EXT --> PROC
+    PROC --> MOD
+    MOD --> OPT
+    OPT --> DB
+    ORCH --> DB
+    BT --> ORCH
+    RISK --> OPT
+    EF --> OPT
+    SET -.-> ORCH
+    SET -.-> MOD
+    SET -.-> OPT
+```
+
+ASCII VERSION (if you prefer to draw manually):
+
++------------------------------------------------------------------+
+|  LAYER 1: USER INTERFACE                                         |
+|  [Streamlit Dashboard]  [CLI - main.py]  [Admin streamlit]       |
++----------------------------+-------------------------------------+
+                             |
++----------------------------v-------------------------------------+
+|  LAYER 2: APPLICATION ORCHESTRATION                              |
+|  run_optimisation() in src/main.py                               |
+|  Sequences: Extract → Preprocess → Predict → Optimise → Return   |
++----------------------------+-------------------------------------+
+                             |
+          +------------------+------------------+
+          |                                     |
++---------v---------+              +------------v-----------+
+| LAYER 3: DATA     |              | LAYER 4: ANALYTICS     |
+| extractor.py      |              | model.py (Prophet)     |
+| processor.py      |------------->| optimiser.py (MPT)     |
+| (yfinance, pandas)|              | risk_analytics.py      |
++-------------------+              | backtesting.py         |
+                                   +------------+-----------+
+                                                |
++-----------------------------------------------v------------------+
+|  LAYER 5: STORAGE — database.py → Supabase (PostgreSQL)          |
+|  Table: stock_optimisation_store                                   |
++------------------------------------------------------------------+
+
+MODULE-TO-LAYER MAPPING TABLE (include in report if needed):
+
+| Layer                    | Module / File           | Responsibility                          |
+|--------------------------|-------------------------|-----------------------------------------|
+| User Interface           | streamlit_app.py        | Charts, metrics, portfolio display      |
+| User Interface           | main.py (main())        | CLI run + save to database              |
+| Orchestration            | main.py (run_optimisation) | Pipeline coordination                |
+| Data Processing          | extractor.py            | Download OHLCV from Yahoo Finance       |
+| Data Processing          | processor.py            | Align dates, compute returns            |
+| Forecasting & Optimisation | model.py              | Prophet one-step price forecasts        |
+| Forecasting & Optimisation | optimiser.py          | Markowitz mean-variance weights         |
+| Forecasting & Optimisation | risk_analytics.py     | VaR, CVaR, Sharpe, drawdown            |
+| Forecasting & Optimisation | backtesting.py        | Walk-forward validation                 |
+| Storage                  | database.py             | Persist results to Supabase             |
+| Configuration            | settings.py             | Tickers, λ, allocation bounds           |
+
+
+--------------------------------------------------------------------------------
+FIGURE 3.2 — OVERALL SYSTEM FLOW DESIGN
+--------------------------------------------------------------------------------
+
+CAPTION:
+"Figure 3.2: End-to-end data flow from Yahoo Finance through Prophet forecasting
+and Markowitz optimisation to Supabase storage and Streamlit visualisation."
+
+DESCRIPTION:
+This is the pipeline executed by run_optimisation() in src/main.py. Prophet
+predicted_returns are passed directly as the expected return vector (μ) to the
+optimiser; historical returns are used only for the covariance matrix (Σ).
+
+MERMAID DIAGRAM:
+
+```mermaid
+flowchart LR
+    A["INPUT<br/>12 tickers from settings.py<br/>START_DATE → END_DATE"] --> B
+
+    B["STEP 1: extract_data()<br/>src/extractor.py<br/>yfinance API"] --> C
+
+    C["STEP 2: preprocess_data()<br/>src/processor.py<br/>Common dates + Returns"] --> D
+
+    D["STEP 3: ProphetModel.predict_for_tickers()<br/>src/model.py<br/>One model per ticker"] --> E
+
+    E["OUTPUTS:<br/>predictions {ticker: price}<br/>predicted_returns {ticker: return}"] --> F
+
+    F["STEP 4: collect_recent_prices()<br/>src/processor.py<br/>Last 30 days for dashboard"] --> G
+
+    G["STEP 5: optimize_portfolio_mean_variance()<br/>src/optimiser.py<br/>μ = Prophet returns<br/>Σ = historical covariance"] --> H
+
+    H["RESULT DICT<br/>date, predictions,<br/>predicted_returns, weights,<br/>actual_prices_last_month"] --> I
+
+    I["STEP 6: save_results_to_supabase()<br/>src/database.py<br/>1 row per ticker"] --> J
+
+    J["STEP 7: Streamlit Dashboard<br/>src/streamlit_app.py<br/>Load + visualise results"]
+```
+
+DETAILED SEQUENTIAL FLOW (numbered steps for report text):
+
+  START
+    |
+    v
+  [1] User / Cron triggers run_optimisation(tickers, start_date, end_date)
+    |
+    v
+  [2] extract_data() — For each ticker (e.g. AAPL):
+        yf.Ticker(ticker).history(start, end)
+        → DataFrame with columns [Price, Returns]
+    |
+    v
+  [3] preprocess_data() — Find intersection of trading dates across all tickers
+        → Aligned dict {ticker: DataFrame} with identical date index
+    |
+    v
+  [4] ProphetModel.predict_for_tickers() — For each ticker:
+        a) Fit Prophet on historical Price series
+        b) Include US trading holidays (XNYS calendar)
+        c) Predict next-day price (one-step ahead)
+        d) predicted_return = (predicted_price - current_price) / current_price
+    |
+    v
+  [5] collect_recent_prices() — Extract last 30 closing prices per ticker
+    |
+    v
+  [6] optimize_portfolio_mean_variance(portfolio_data, expected_returns=predicted_returns)
+        a) calculate_mean_variance(): μ from Prophet, Σ from 252-day historical returns
+        b) Minimise: -(wᵀμ - λ/2 · wᵀΣw)  subject to Σwᵢ=1, bounds [5%, 100%]
+        c) Solver: scipy.optimize.minimize(method="SLSQP")
+    |
+    v
+  [7] Return result dictionary to caller
+    |
+    v
+  [8] save_results_to_supabase() — Insert rows into stock_optimisation_store
+    |
+    v
+  [9] Streamlit dashboard reads from Supabase and displays:
+        portfolio weights, forecast accuracy (MAPE/RMSE), risk metrics, charts
+    |
+    v
+  END
+
+DATA TRANSFORMATION AT EACH STAGE:
+
+  Stage 2 output example:
+    {'AAPL': DataFrame(Price, Returns), 'MSFT': DataFrame(...), ...}
+
+  Stage 4 output example:
+    predictions = {'AAPL': 182.50, 'MSFT': 415.20, ...}
+    predicted_returns = {'AAPL': 0.012, 'MSFT': 0.008, ...}
+
+  Stage 6 output example:
+    weights = {'AAPL': 0.12, 'MSFT': 0.15, 'NVDA': 0.18, ...}  (sum = 1.0)
+
+  Stage 8 database row example:
+    {ticker, predicted_price, predicted_return, portfolio_weight,
+     actual_prices_last_month, as_of_date, created_at}
+
+
+--------------------------------------------------------------------------------
+FIGURE 3.3 — RISK ANALYTICS FRAMEWORK
+--------------------------------------------------------------------------------
+
+CAPTION:
+"Figure 3.3: Risk analytics framework applied after portfolio construction.
+The system evaluates downside risk, risk-adjusted returns, and tail behaviour
+using metrics implemented in src/risk_analytics.py and displayed in the dashboard."
+
+DESCRIPTION:
+Risk analytics runs on portfolio return series (weighted by optimised
+allocations). Backtesting in src/backtesting.py also computes portfolio-level
+Sharpe ratio and volatility from walk-forward results.
+
+MERMAID DIAGRAM:
+
+```mermaid
+flowchart TB
+    subgraph INPUT["Inputs to Risk Analytics"]
+        W["Optimal Weights (w)<br/>from optimiser.py"]
+        R["Historical / Backtest Returns<br/>per asset"]
+        MU["Expected Returns (μ)<br/>from Prophet forecasts"]
+    end
+
+    subgraph CONSTRUCT["Portfolio Construction"]
+        PR["Portfolio Return Series<br/>r_p = Σ w_i × r_i"]
+    end
+
+    subgraph DOWNSIDE["Downside Risk Measures"]
+        VAR["Value at Risk (VaR)<br/>95% and 99% confidence<br/>risk_analytics.py"]
+        CVAR["Conditional VaR (CVaR)<br/>Expected loss beyond VaR<br/>risk_analytics.py"]
+        MDD["Maximum Drawdown<br/>Peak-to-trough decline"]
+    end
+
+    subgraph RISKADJ["Risk-Adjusted Performance"]
+        SHARPE["Sharpe Ratio<br/>(R_p - R_f) / σ_p"]
+        SORTINO["Sortino Ratio<br/>Downside deviation only"]
+        CALMAR["Calmar Ratio<br/>Return / Max Drawdown"]
+    end
+
+    subgraph DISTRIBUTION["Distribution Analysis"]
+        VOL["Portfolio Volatility (σ)<br/>Annualised"]
+        SKEW["Skewness"]
+        KURT["Kurtosis"]
+        BETA["Beta vs Market"]
+        ALPHA["Jensen's Alpha"]
+    end
+
+    subgraph OUTPUT["Outputs"]
+        DASH["Streamlit Dashboard<br/>Risk metrics panel"]
+        BT_SUM["BacktestSummary<br/>backtesting.py"]
+        STORE["Optional DB persistence"]
+    end
+
+    W --> PR
+    R --> PR
+    MU --> PR
+    PR --> VAR
+    PR --> CVAR
+    PR --> MDD
+    PR --> SHARPE
+    PR --> SORTINO
+    PR --> VOL
+    PR --> SKEW
+    PR --> KURT
+    MDD --> CALMAR
+    VAR --> DASH
+    CVAR --> DASH
+    SHARPE --> DASH
+    SORTINO --> DASH
+    MDD --> DASH
+    SHARPE --> BT_SUM
+    VOL --> BT_SUM
+```
+
+RISK METRICS FORMULA REFERENCE (matches your code and Chapter 3 text):
+
+  VaR (95%):     5th percentile of portfolio return distribution
+  CVaR (95%):    Mean of returns below the VaR threshold
+  Sharpe Ratio:  (mean_return - risk_free_rate) / std_return  [annualised in code]
+  Sortino Ratio: (mean_return - risk_free_rate) / downside_std
+  Max Drawdown:  max(peak - trough) / peak over the return series
+  Volatility:    std(returns) × sqrt(252)  [annualised]
+
+WHERE EACH METRIC IS COMPUTED IN YOUR PROJECT:
+
+  src/risk_analytics.py     → RiskMetrics dataclass (VaR, CVaR, Sharpe, etc.)
+  src/backtesting.py        → BacktestSummary (avg MAPE, Sharpe, volatility)
+  src/streamlit_app.py      → calculate_portfolio_metrics(), calculate_mape/rmse
+  src/efficient_frontier.py → Efficient frontier curve for risk-return trade-off
+
+
+--------------------------------------------------------------------------------
+FIGURE 3.4 — SYSTEM DESIGN FLOW (Module Integration & Implementation Phases)
+--------------------------------------------------------------------------------
+
+CAPTION:
+"Figure 3.4: Module integration flow showing how independently developed
+components are wired together during implementation, from configuration through
+testing to deployment."
+
+DESCRIPTION:
+This diagram shows the dependency graph and integration order used during
+development (Phases 1–5 from Section 3.3 of your methodology).
+
+MERMAID DIAGRAM:
+
+```mermaid
+flowchart TB
+    subgraph PHASE1["Phase 1: Requirements & Configuration"]
+        REQ["Functional Requirements<br/>Forecast, Optimise, Store, Visualise"]
+        SET["settings.py<br/>PORTFOLIO_TICKERS, RISK_AVERSION=5<br/>MIN_ALLOC=5%, PROPHET_PARAMS"]
+    end
+
+    subgraph PHASE2["Phase 2: Core Data Pipeline"]
+        EXT["extractor.py"]
+        PROC["processor.py"]
+        EXT --> PROC
+    end
+
+    subgraph PHASE3["Phase 3: Analytics Engine"]
+        MOD["model.py<br/>ProphetModel"]
+        OPT["optimiser.py<br/>optimize_portfolio_mean_variance()"]
+        PROC --> MOD
+        MOD -->|"predictions + predicted_returns"| OPT
+    end
+
+    subgraph PHASE4["Phase 4: Integration & Persistence"]
+        MAIN["main.py<br/>run_optimisation()"]
+        DB["database.py<br/>save_results_to_supabase()"]
+        SET --> MAIN
+        EXT --> MAIN
+        PROC --> MAIN
+        MOD --> MAIN
+        OPT --> MAIN
+        MAIN --> DB
+    end
+
+    subgraph PHASE5["Phase 5: Extended Features"]
+        RISK["risk_analytics.py"]
+        BT["backtesting.py"]
+        EF["efficient_frontier.py"]
+        ST["streamlit_app.py"]
+        DB --> ST
+        MAIN --> BT
+        OPT --> RISK
+        OPT --> EF
+    end
+
+    subgraph PHASE6["Phase 6: Testing & Deployment"]
+        TESTS["tests/<br/>unit + integration + edge cases"]
+        CI[".github/workflows/<br/>daily-optimisation.yml"]
+        VPS["VPS Deployment<br/>scripts/deploy.sh"]
+        MAIN --> TESTS
+        MAIN --> CI
+        MAIN --> VPS
+    end
+```
+
+IMPLEMENTATION DEPENDENCY ORDER (bottom-up build sequence):
+
+  1. settings.py          (no dependencies — config first)
+  2. extractor.py         (yfinance, pandas)
+  3. processor.py         (pandas)
+  4. model.py             (prophet, pandas_market_calendars)
+  5. optimiser.py         (scipy, numpy, settings)
+  6. database.py          (supabase, settings)
+  7. main.py              (imports all above — integration point)
+  8. risk_analytics.py    (numpy, scipy — used by dashboard)
+  9. backtesting.py       (imports main.run_optimisation)
+ 10. streamlit_app.py     (imports database, efficient_frontier, settings)
+ 11. tests/*              (pytest — validates each module)
+
+IMPORT GRAPH (simplified):
+
+  main.py
+    ├── extractor.py      → settings.py
+    ├── processor.py
+    ├── model.py          → settings.py
+    ├── optimiser.py      → settings.py
+    └── database.py       → settings.py
+
+  backtesting.py → main.py, settings.py
+  streamlit_app.py → database.py, efficient_frontier.py, settings.py
+
+
+================================================================================
+PART B — CHAPTER FOUR: IMPLEMENTATION
+================================================================================
+
+Copy the text below into your report as Chapter 4. Where you see
+[SCREENSHOT X], take a screenshot from your IDE (Cursor/VS Code) of the
+specified file and line range, then insert it into Word with the given caption.
+
+TIP FOR SCREENSHOTS:
+  - Use a dark or light theme consistently across all screenshots
+  - Crop to show only the relevant function/class (not the whole file)
+  - Font size 12–14 in the editor reads well in print
+  - Add figure numbers: Figure 4.1, Figure 4.2, etc.
+
+--------------------------------------------------------------------------------
+CHAPTER FOUR
+IMPLEMENTATION
+--------------------------------------------------------------------------------
+
+4.1 INTRODUCTION
+
+This chapter describes the practical implementation of the Prophet-based portfolio
+optimisation system developed in Python. The implementation translates the
+methodological framework presented in Chapter Three into a working software
+platform comprising twelve source modules, a comprehensive test suite, a
+Streamlit dashboard, and automated deployment pipelines.
+
+The system was implemented using a modular architecture in which each component
+was developed and unit-tested independently before integration through the
+central orchestration function run_optimisation() in src/main.py. Version control
+was managed using Git and GitHub (repository: nyxkings/prophet-stock-forecast),
+with continuous integration configured via GitHub Actions.
+
+The portfolio under study consists of twelve publicly traded equities configured
+in src/settings.py: AMD, MSFT, AAPL, TSLA, AMZN, NVDA, META, GOOG, TSM, JPM,
+NFLX, and PLTR. Risk parameters were set to a balanced investor profile with a
+risk aversion coefficient λ = 5, minimum allocation of 5% per asset, and
+maximum allocation of 100%.  
+
+
+4.2 DEVELOPMENT ENVIRONMENT AND PROJECT STRUCTURE
+
+The system was developed in Python 3 using Cursor as the integrated development
+environment. Dependencies were managed with Poetry (pyproject.toml) and include
+Prophet, pandas, NumPy, SciPy, yfinance, Supabase, and Streamlit.
+
+The project directory structure is organised as follows:
+
+  src/                  — Application source code (12 modules)
+  tests/                — Unit, integration, and edge-case tests
+  .github/workflows/    — CI/CD and daily optimisation scheduling
+  scripts/              — Deployment scripts
+
+[SCREENSHOT 4.1]
+  WHAT TO CAPTURE: Project folder tree in Cursor's file explorer showing
+                   src/, tests/, pyproject.toml, README.md
+  FILE:            Project root directory
+  CAPTION:         "Figure 4.1: Project directory structure in the development
+                   environment."
+
+
+4.3 CONFIGURATION MODULE (settings.py)
+
+All system-wide constants are centralised in src/settings.py to provide a
+single source of truth for portfolio composition, risk parameters, date ranges,
+Prophet model hyperparameters, and database table names.
+
+Key configuration values implemented in the system:
+
+  - PORTFOLIO_TICKERS: list of 12 stock symbols
+  - RISK_AVERSION = 5 (balanced investor)
+  - MINIMUM_ALLOCATION = 0.05 (5% floor per asset)
+  - MAXIMUM_ALLOCATION = 1.0 (100% ceiling per asset)
+  - PROPHET_PARAMS: yearly and weekly seasonality enabled
+  - SUPABASE_TABLE_NAME = "stock_optimisation_store"
+
+[SCREENSHOT 4.2]
+  WHAT TO CAPTURE: Lines showing PORTFOLIO_TICKERS, RISK_AVERSION,
+                   MINIMUM_ALLOCATION, and PROPHET_PARAMS
+  FILE:            src/settings.py
+  LINES:           1–54 (or crop to lines 4–27 and 48–53)
+  CAPTION:         "Figure 4.2: Centralised system configuration in settings.py,
+                   defining portfolio tickers and risk parameters."
+
+
+4.4 DATA EXTRACTION MODULE (extractor.py)
+
+The data extraction module retrieves historical stock prices from Yahoo Finance
+using the yfinance library. The function extract_data() iterates over the
+provided ticker list, downloads OHLCV data for each symbol, and returns a
+dictionary of processed DataFrames.
+
+For each ticker, the helper function _process_ticker_dataframe() performs:
+  (a) extraction of the closing price column,
+  (b) renaming to "Price",
+  (c) calculation of daily returns using pandas pct_change(), and
+  (d) normalisation of the date index.
+
+Error handling is implemented at the per-ticker level: if a symbol is invalid or
+unavailable, the error is logged and that ticker is skipped rather than causing
+the entire pipeline to fail.
+
+[SCREENSHOT 4.3]
+  WHAT TO CAPTURE: The extract_data() function and _process_ticker_dataframe()
+  FILE:            src/extractor.py
+  LINES:           13–34 and 66–89
+  CAPTION:         "Figure 4.3: Data extraction module downloading and
+                   processing historical stock prices via yfinance."
+
+
+4.5 DATA PREPROCESSING MODULE (processor.py)
+
+The preprocessing module aligns multiple ticker DataFrames to a common set of
+trading dates. The function preprocess_data() computes the set intersection of
+dates across all tickers and trims each DataFrame accordingly. This ensures that
+covariance estimation and portfolio optimisation operate on synchronised return
+series.
+
+Additional utility functions include:
+  - collect_recent_prices(): extracts the last 30 days of prices for dashboard
+    sparkline charts
+  - append_predictions(): extends historical data with a predicted next-day row
+    (retained for backward compatibility; the main pipeline now passes Prophet
+    returns directly to the optimiser)
+
+[SCREENSHOT 4.4]
+  WHAT TO CAPTURE: The preprocess_data() function showing date intersection logic
+  FILE:            src/processor.py
+  LINES:           11–39
+  CAPTION:         "Figure 4.4: Data preprocessing module aligning stock
+                   datasets to common trading dates."
+
+
+4.6 PROPHET FORECASTING MODULE (model.py)
+
+The forecasting module implements the ProphetModel class, which fits an
+independent Prophet model for each ticker in the portfolio. The implementation
+incorporates US stock exchange holidays retrieved from the XNYS calendar via
+pandas_market_calendars, preventing forecasts on non-trading days.
+
+The predict_for_tickers() method:
+  1. Retrieves the current (last known) closing price for each ticker
+  2. Calls predict_next() to fit Prophet and generate a one-step-ahead forecast
+  3. Computes the predicted daily return as (predicted_price - current_price) / current_price
+  4. Returns two dictionaries: predictions (prices) and predicted_returns (returns)
+
+Prophet is configured with yearly seasonality enabled, weekly seasonality
+enabled, and daily seasonality disabled, as defined in PROPHET_PARAMS within
+settings.py.
+
+[SCREENSHOT 4.5]
+  WHAT TO CAPTURE: ProphetModel class — predict_for_tickers() and predict_next()
+  FILE:            src/model.py
+  LINES:           91–141 (fit method) and 169–204 (predict_for_tickers)
+  CAPTION:         "Figure 4.5: Prophet forecasting module implementing
+                   one-step-ahead price prediction per ticker."
+
+
+4.7 PORTFOLIO OPTIMISATION MODULE (optimiser.py)
+
+The optimisation module implements Markowitz mean-variance portfolio optimisation
+using the Sequential Least Squares Programming (SLSQP) solver from SciPy.
+
+The function calculate_mean_variance() constructs:
+  - μ (expected returns): from Prophet's predicted_returns when provided, otherwise
+    from historical mean returns
+  - Σ (covariance matrix): always computed from the last 252 trading days of
+    historical returns
+
+The objective function minimised is:
+
+  f(w) = -(wᵀμ - λ/2 · wᵀΣw)
+
+Subject to:
+  - Equality constraint: Σwᵢ = 1 (fully invested portfolio)
+  - Bound constraints: 0.05 ≤ wᵢ ≤ 1.0 per asset
+  - No short selling (enforced by lower bound ≥ 0)
+
+[SCREENSHOT 4.6]
+  WHAT TO CAPTURE: optimize_portfolio_mean_variance() including objective
+                   function, constraints, and SLSQP solver call
+  FILE:            src/optimiser.py
+  LINES:           76–132
+  CAPTION:         "Figure 4.6: Mean-variance portfolio optimisation using
+                   SciPy SLSQP with Prophet expected returns."
+
+
+4.8 PIPELINE ORCHESTRATION (main.py)
+
+The function run_optimisation() serves as the central orchestrator, executing
+the complete pipeline in sequence:
+
+  Step 1 — extract_data(): download historical prices
+  Step 2 — preprocess_data(): align dates and compute returns
+  Step 3 — ProphetModel().predict_for_tickers(): generate forecasts
+  Step 4 — collect_recent_prices(): gather recent price history
+  Step 5 — optimize_portfolio_mean_variance(): compute optimal weights,
+           passing predicted_returns as the expected return vector
+  Step 6 — return structured result dictionary
+
+The CLI entry point main() calls run_optimisation() with the default ticker
+list from settings.py and persists results to Supabase via
+save_results_to_supabase().
+
+[SCREENSHOT 4.7]
+  WHAT TO CAPTURE: The full run_optimisation() function showing all six steps
+  FILE:            src/main.py
+  LINES:           23–99
+  CAPTION:         "Figure 4.7: Pipeline orchestration in run_optimisation()
+                   coordinating extraction, forecasting, and optimisation."
+
+
+4.9 DATABASE MODULE (database.py)
+
+Results are persisted to a Supabase-managed PostgreSQL database. The function
+save_results_to_supabase() creates one database row per ticker for each
+optimisation run, storing:
+
+  - as_of_date: the date the optimisation was run
+  - ticker: stock symbol
+  - predicted_price: Prophet's next-day price forecast
+  - predicted_return: computed expected return
+  - portfolio_weight: optimal allocation from the optimiser
+  - actual_prices_last_month: JSON array of recent closing prices
+
+Database credentials (SUPABASE_URL and SUPABASE_KEY) are loaded from environment
+variables, ensuring credentials are not hardcoded in source files.
+
+[SCREENSHOT 4.8]
+  WHAT TO CAPTURE: save_results_to_supabase() showing row construction and insert
+  FILE:            src/database.py
+  LINES:           36–79
+  CAPTION:         "Figure 4.8: Database persistence layer saving optimisation
+                   results to Supabase PostgreSQL."
+
+
+4.10 STREAMLIT DASHBOARD (streamlit_app.py)
+
+The presentation layer is implemented as an interactive Streamlit web
+application. The dashboard loads historical optimisation results from Supabase
+and provides:
+
+  - Portfolio weight visualisation (pie/bar charts)
+  - Forecast accuracy metrics (MAPE, RMSE, MAE) per ticker
+  - Portfolio-level Sharpe ratio and volatility (weighted by optimal allocations)
+  - Cumulative return charts comparing predicted vs actual performance
+  - Correlation matrix and efficient frontier visualisation
+
+The function calculate_portfolio_metrics() computes risk-adjusted performance
+using weight-weighted returns when portfolio_weight and return columns are
+available in the performance DataFrame.
+
+[SCREENSHOT 4.9]
+  WHAT TO CAPTURE: Either (a) code showing calculate_portfolio_metrics() in
+                   streamlit_app.py lines 79–95, OR (b) a browser screenshot of
+                   the running Streamlit dashboard showing portfolio weights chart
+  FILE:            src/streamlit_app.py (code) OR browser (UI)
+  LINES:           79–95 (if code screenshot)
+  CAPTION:         "Figure 4.9: Streamlit dashboard computing portfolio-level
+                   metrics from weighted returns."
+
+
+4.11 BACKTESTING IMPLEMENTATION (backtesting.py)
+
+The backtesting framework implements walk-forward validation as described in
+Section 3.8.2 of the methodology. The Backtester class:
+
+  1. Defines a rolling training window (default: 252 trading days)
+  2. For each test date, calls run_optimisation() with history up to that date
+  3. Compares Prophet's predicted prices against actual next-day prices
+  4. Computes per-date metrics: price MAPE, return MAPE, portfolio returns
+  5. Aggregates results into a BacktestSummary with Sharpe ratio and volatility
+
+[SCREENSHOT 4.10]
+  WHAT TO CAPTURE: Backtester.run() walk-forward loop calling run_optimisation()
+  FILE:            src/backtesting.py
+  LINES:           169–226
+  CAPTION:         "Figure 4.10: Walk-forward backtesting implementation
+                   validating forecasting accuracy on historical dates."
+
+
+4.12 RISK ANALYTICS IMPLEMENTATION (risk_analytics.py)
+
+The risk analytics module computes a comprehensive set of risk metrics through
+the RiskMetrics dataclass, including:
+
+  - Value at Risk (VaR) at 95% and 99% confidence levels
+  - Conditional Value at Risk (CVaR / Expected Shortfall)
+  - Sharpe Ratio and Sortino Ratio (annualised)
+  - Maximum Drawdown and Calmar Ratio
+  - Volatility, skewness, kurtosis, beta, and Jensen's alpha
+
+These metrics complement the optimisation output by quantifying downside risk
+exposure and risk-adjusted performance.
+
+[SCREENSHOT 4.11]
+  WHAT TO CAPTURE: RiskMetrics dataclass definition showing all metric fields
+  FILE:            src/risk_analytics.py
+  LINES:           13–47
+  CAPTION:         "Figure 4.11: Risk analytics module defining portfolio
+                   risk metrics including VaR, CVaR, and Sharpe ratio."
+
+
+4.13 TESTING IMPLEMENTATION
+
+The system includes a comprehensive test suite under tests/ covering:
+
+  - Unit tests: individual module functions (test_extractor.py, test_model.py,
+    test_optimiser.py, test_processor.py, test_database.py)
+  - Integration tests: full pipeline validation (test_integration.py)
+  - Edge cases: error handling and boundary conditions (test_edge_cases.py)
+  - Dashboard tests: Streamlit metric calculations (test_streamlit_app.py)
+  - Backtesting tests: walk-forward result validation (test_backtesting.py)
+
+A key integration test verifies that run_optimisation() passes Prophet's
+predicted_returns to the optimiser as the expected_returns parameter, ensuring
+consistency between the forecasting and optimisation pipeline stages.
+
+[SCREENSHOT 4.12]
+  WHAT TO CAPTURE: test_run_optimisation_passes_prophet_returns_to_optimiser()
+                   in test_integration.py
+  FILE:            tests/test_integration.py
+  LINES:           50–68
+  CAPTION:         "Figure 4.12: Integration test verifying Prophet returns
+                   are passed as MPT expected returns to the optimiser."
+
+[SCREENSHOT 4.13]
+  WHAT TO CAPTURE: Terminal output of pytest run showing all tests passing
+  COMMAND:         cd project && pytest tests/ -v
+  CAPTION:         "Figure 4.13: Test suite execution confirming system
+                   correctness across all modules."
+
+
+4.14 DEPLOYMENT
+
+The completed system is deployed on a Virtual Private Server (VPS) with:
+
+  - Daily automated optimisation via GitHub Actions
+    (.github/workflows/daily-optimisation.yml)
+  - Deployment script (scripts/deploy.sh) for VPS setup
+  - Environment variables for Supabase credentials on the server
+  - Optional Streamlit dashboard hosting for result visualisation
+
+[SCREENSHOT 4.14]
+  WHAT TO CAPTURE: .github/workflows/daily-optimisation.yml showing the
+                   scheduled cron job
+  FILE:            .github/workflows/daily-optimisation.yml
+  CAPTION:         "Figure 4.14: Automated daily portfolio optimisation
+                   scheduled via GitHub Actions."
+
+
+4.15 IMPLEMENTATION SUMMARY
+
+Table 4.1 summarises the mapping between system requirements and their
+implemented modules.
+
+Table 4.1: Module Implementation Summary
+
+| Requirement              | Module File          | Key Function / Class              |
+|--------------------------|----------------------|-----------------------------------|
+| Data acquisition         | extractor.py         | extract_data()                    |
+| Data preprocessing       | processor.py         | preprocess_data()                 |
+| Price forecasting        | model.py             | ProphetModel.predict_for_tickers()|
+| Portfolio optimisation   | optimiser.py         | optimize_portfolio_mean_variance()|
+| Pipeline orchestration   | main.py              | run_optimisation()                |
+| Result persistence       | database.py          | save_results_to_supabase()        |
+| Dashboard visualisation  | streamlit_app.py     | Streamlit UI + metric functions   |
+| Risk assessment          | risk_analytics.py    | RiskMetrics                       |
+| Performance validation   | backtesting.py       | Backtester.run()                  |
+| Configuration            | settings.py          | PORTFOLIO_TICKERS, RISK_AVERSION  |
+
+The modular implementation ensures that each component can be tested, modified,
+and extended independently. The integration through run_optimisation() provides
+a single entry point for both CLI execution and backtesting, while the Streamlit
+dashboard and Supabase persistence layer deliver end-to-end usability for
+investment analysis and historical performance tracking.
+
+
+================================================================================
+APPENDIX: SCREENSHOT CHECKLIST
+================================================================================
+
+Use this checklist when inserting screenshots into Word:
+
+  [ ] Figure 4.1  — Project folder tree (file explorer)
+  [ ] Figure 4.2  — src/settings.py (tickers + risk params)
+  [ ] Figure 4.3  — src/extractor.py (extract_data)
+  [ ] Figure 4.4  — src/processor.py (preprocess_data)
+  [ ] Figure 4.5  — src/model.py (ProphetModel)
+  [ ] Figure 4.6  — src/optimiser.py (SLSQP optimisation)
+  [ ] Figure 4.7  — src/main.py (run_optimisation pipeline)
+  [ ] Figure 4.8  — src/database.py (Supabase save)
+  [ ] Figure 4.9  — streamlit_app.py OR running dashboard UI
+  [ ] Figure 4.10 — src/backtesting.py (walk-forward loop)
+  [ ] Figure 4.11 — src/risk_analytics.py (RiskMetrics)
+  [ ] Figure 4.12 — tests/test_integration.py (integration test)
+  [ ] Figure 4.13 — pytest terminal output (all passing)
+  [ ] Figure 4.14 — .github/workflows/daily-optimisation.yml
+
+For Chapter 3 diagrams:
+
+  [ ] Figure 3.1 — System Architecture (from Part A, Figure 3.1 Mermaid)
+  [ ] Figure 3.2 — Overall System Flow (from Part A, Figure 3.2 Mermaid)
+  [ ] Figure 3.3 — Risk Analytics Framework (from Part A, Figure 3.3 Mermaid)
+  [ ] Figure 3.4 — System Design Flow (from Part A, Figure 3.4 Mermaid)
+
+HOW TO EXPORT MERMAID DIAGRAMS AS IMAGES:
+  1. Go to https://mermaid.live
+  2. Paste the Mermaid code block for the figure
+  3. Click "Export" → PNG or SVG
+  4. Insert the image into your Word document
+  5. Add the caption from this file below each image
+
+================================================================================
+END OF FILE
+================================================================================

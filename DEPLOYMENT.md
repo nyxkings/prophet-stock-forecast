@@ -303,22 +303,21 @@ In Supabase SQL Editor, run:
 
 ```sql
 -- Create table for storing optimization results
+-- Column names must match src/database.py save_results_to_supabase()
 CREATE TABLE IF NOT EXISTS stock_optimisation_store (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  run_date DATE NOT NULL,
+  id UUID PRIMARY KEY,
+  created_at TIMESTAMPTZ,
+  as_of_date DATE,
   ticker TEXT NOT NULL,
-  predicted_price DECIMAL NOT NULL,
-  predicted_return DECIMAL NOT NULL,
-  optimal_weight DECIMAL NOT NULL,
-  recent_prices JSONB DEFAULT NULL,
-  
-  UNIQUE(run_date, ticker)
+  predicted_price DOUBLE PRECISION NOT NULL,
+  predicted_return DOUBLE PRECISION NOT NULL,
+  actual_prices_last_month JSONB,
+  portfolio_weight DOUBLE PRECISION NOT NULL
 );
 
--- Create index for faster queries
-CREATE INDEX idx_run_date ON stock_optimisation_store(run_date DESC);
-CREATE INDEX idx_ticker ON stock_optimisation_store(ticker);
+-- Create indexes for faster queries
+CREATE INDEX IF NOT EXISTS idx_as_of_date ON stock_optimisation_store(as_of_date DESC);
+CREATE INDEX IF NOT EXISTS idx_ticker ON stock_optimisation_store(ticker);
 
 -- Enable Row Level Security
 ALTER TABLE stock_optimisation_store ENABLE ROW LEVEL SECURITY;
@@ -539,10 +538,10 @@ def check_recent_results():
         if not client:
             return False, "Cannot connect to database"
         
-        result = client.table('stock_optimisation_store').select('run_date').order('run_date', desc=True).limit(1).execute()
+        result = client.table('stock_optimisation_store').select('as_of_date').order('as_of_date', desc=True).limit(1).execute()
         
         if result.data:
-            last_run = result.data[0]['run_date']
+            last_run = result.data[0]['as_of_date']
             return True, f"Last run: {last_run}"
         else:
             return False, "No results found in database"
