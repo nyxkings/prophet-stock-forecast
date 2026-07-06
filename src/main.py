@@ -126,4 +126,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    from src.analysis_cli import dispatch
+
+    if len(sys.argv) > 1 and dispatch(sys.argv[1:]):
+        sys.exit(0)
     main()

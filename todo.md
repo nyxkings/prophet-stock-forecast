@@ -1,7 +1,9 @@
 # Prophet Portfolio Optimization - Project Completion Checklist
 
 ## Overview
-This document tracks the remaining work to bring the Prophet Forecasting for Portfolio Optimisation project to completion. The core functionality is implemented; remaining work focuses on testing, documentation, monitoring, and advanced features.
+This document tracks the remaining work to bring the Prophet Forecasting for Portfolio Optimisation project to completion. The core functionality is implemented; remaining work focuses on testing, documentation, monitoring, workflow integration for advanced features, and DevOps.
+
+**Last updated:** 2026-07-06 — Phase 5 module status aligned with codebase (`backtesting.py`, `risk_analytics.py`, `sector_analysis.py` implemented; not yet wired into `main.py`, Makefile, CI, or Streamlit).
 
 ---
 
@@ -250,20 +252,55 @@ Setup monitoring, alerts, and production deployment infrastructure.
 
 ---
 
-## Phase 5: Advanced Features & Analysis (Medium Priority) 🚀 [READY TO START]
+## Phase 5: Advanced Features & Analysis (Medium Priority) 🔶 [MOSTLY COMPLETE]
 
-### Backtesting Framework
-- [ ] Implement backtesting functionality to test optimization on historical data
-- [ ] Compare predicted returns vs actual returns
-- [ ] Calculate historical Sharpe ratio of recommendations
-- [ ] Create backtest performance report generator
+**Status:** Core modules are implemented, tested, and wired via **optional** CLI/Makefile commands and a Streamlit button. The default daily path (`python -m src.main` with no args) is unchanged: optimise → Supabase.
 
-### Risk Analytics
-- [ ] Add Value at Risk (VaR) calculation
-- [ ] Add Expected Shortfall (CVaR) calculation
-- [ ] Add portfolio Sharpe ratio display
-- [ ] Add portfolio concentration metrics
-- [ ] Add sector/industry exposure analysis
+### Backtesting Framework ✅ [WIRED — OPTIONAL CLI]
+- [x] Implement backtesting functionality to test optimization on historical data
+  - `src/backtesting.py` — `Backtester`, `BacktestResult`, `BacktestSummary`
+  - `tests/test_backtesting.py` — 20 tests
+  - Uses `run_optimisation()` internally (inherits Prophet → MPT pipeline)
+- [x] Compare predicted returns vs actual returns
+  - Per-date and aggregate MAPE; portfolio predicted vs actual return in `BacktestSummary`
+- [x] Calculate historical Sharpe ratio of recommendations
+  - `portfolio_sharpe_ratio`, volatility, max drawdown in `BacktestSummary`
+- [x] Create backtest performance report generator
+  - `save_backtest_report()` writes CSV via `--output` on `backtest` command
+
+### Risk Analytics ✅ [WIRED — OPTIONAL CLI + STREAMLIT]
+- [x] Add Value at Risk (VaR) calculation
+  - `src/risk_analytics.py` — `RiskAnalyzer.calculate_var()` (95% / 99%)
+- [x] Add Expected Shortfall (CVaR) calculation
+  - `RiskAnalyzer.calculate_cvar()` (95% / 99%)
+- [x] Add portfolio Sharpe ratio display
+  - `RiskAnalyzer.calculate_sharpe_ratio()`, `calculate_portfolio_metrics()`
+  - Streamlit Performance Metrics tab + `python -m src.main risk`
+- [x] Add portfolio concentration metrics
+  - `RiskAnalyzer.calculate_portfolio_concentration()`, diversification ratio, correlation matrix
+- [x] Add sector/industry exposure analysis
+  - `src/sector_analysis.py` — `SectorAnalyzer`, HHI concentration, sector weights
+  - `tests/test_sector_analysis.py` — 35 tests
+  - Streamlit Performance Metrics tab + `python -m src.main sector`
+
+### Workflow integration ✅ [WIRED — OPTIONAL COMMANDS]
+- [x] Add CLI or Makefile target to run `Backtester` (e.g. `make backtest`)
+  - `python -m src.main backtest` / `make backtest` / `src/analysis_cli.py`
+  - `src/portfolio_analysis.py` — shared helpers + CSV report export
+- [x] Expose `RiskAnalyzer` / `SectorAnalyzer` in Streamlit dashboard tabs
+  - Performance Metrics tab → button loads VaR/CVaR/sector tables
+- [ ] Add backtest / evaluation step to CI or scheduled workflow (optional)
+- [x] Document commands in `todo.md` (see below); optional: extend `USER_GUIDE.md`
+
+**Running analysis commands (does not replace daily optimise):**
+```bash
+poetry run python -m src.main              # default: optimise + Supabase save
+poetry run python -m src.main backtest     # walk-forward backtest + CSV report
+poetry run python -m src.main risk         # VaR/CVaR/Sharpe on current portfolio
+poetry run python -m src.main sector       # sector exposure analysis
+poetry run python -m src.main analyze      # risk + sector together
+make backtest / make analyze / make risk / make sector
+```
 
 ### Sensitivity Analysis
 - [ ] Analyze sensitivity to risk aversion parameter
@@ -276,6 +313,13 @@ Setup monitoring, alerts, and production deployment infrastructure.
 - [ ] Test alternative forecasting models (ARIMA, LSTM)
 - [ ] Implement ensemble methods combining multiple forecasts
 - [ ] Add model selection based on historical accuracy
+
+**Phase 5 files (implemented + wired):**
+- ✅ `src/backtesting.py` + `tests/test_backtesting.py`
+- ✅ `src/risk_analytics.py` + `tests/test_risk_analytics.py`
+- ✅ `src/sector_analysis.py` + `tests/test_sector_analysis.py`
+- ✅ `src/portfolio_analysis.py` + `tests/test_portfolio_analysis.py`
+- ✅ `src/analysis_cli.py` + `tests/test_analysis_cli.py`
 
 ---
 
@@ -369,7 +413,7 @@ Setup monitoring, alerts, and production deployment infrastructure.
 2. **Important (Should do):**
    - Phase 2: User guides
    - Phase 3: Dashboard improvements
-   - Phase 5: Backtesting framework
+   - Phase 5: **Wire** backtesting / risk / sector modules into CLI, dashboard, and docs (modules already exist)
 
 3. **Nice to have (Could do):**
    - Phase 6: Code refactoring
@@ -395,9 +439,18 @@ Setup monitoring, alerts, and production deployment infrastructure.
 
 - The project is currently running in production on Hostinger VPS
 - Live at portfolio-optimisation.com
-- Core functionality is solid; focus on testing, monitoring, and user experience
+- Core functionality is solid; focus on testing, monitoring, user experience, and **integrating Phase 5 modules into the main workflow**
 - Each phase can be worked on independently
 - Regular review and updates of this checklist recommended as project evolves
+
+### Phase 5 modules vs production workflow (2026-07-06)
+| Module | Implemented | Tested | Default `main` (optimise) | Streamlit | CLI / Makefile |
+|--------|-------------|--------|---------------------------|-----------|----------------|
+| `backtesting.py` | ✅ | ✅ (20 tests) | unchanged | — | ✅ `backtest` |
+| `risk_analytics.py` | ✅ | ✅ (39 tests) | unchanged | ✅ button | ✅ `risk` / `analyze` |
+| `sector_analysis.py` | ✅ | ✅ (35 tests) | unchanged | ✅ button | ✅ `sector` / `analyze` |
+
+Daily production path remains: `python -m src.main` (no args) → Prophet → MPT → Supabase → `streamlit_app.py` (reads DB).
 
 ### Phase 1 Testing Infrastructure (Created May 5, 2026)
 - Created comprehensive test infrastructure with pytest fixtures, mocks, and helpers

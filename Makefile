@@ -40,3 +40,15 @@ run:
 dashboard:
 	poetry run streamlit run src/streamlit_app.py
 
+backtest:
+	poetry run python -m src.main backtest
+
+analyze:
+	poetry run python -m src.main analyze
+
+risk:
+	poetry run python -m src.main risk
+
+sector:
+	poetry run python -m src.main sector
+

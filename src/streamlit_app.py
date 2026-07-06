@@ -16,6 +16,14 @@ import streamlit as st
 from src.database import get_supabase_client
 from src.efficient_frontier import EfficientFrontier
 from src.mock_data import generate_mock_portfolio_data
+from src.portfolio_analysis import (
+    analyze_portfolio_risk,
+    analyze_portfolio_sectors,
+    expected_returns_from_date_df,
+    load_returns_data,
+    sector_analysis_to_records,
+    weights_from_date_df,
+)
 from src.settings import SUPABASE_TABLE_NAME
 
 # ============================================================================
@@ -827,6 +835,65 @@ def run_dashboard() -> None:
                             "Volatility (Predicted)",
                             f"{portfolio_metrics['volatility_predicted']:.2f}"
                         )
+
+            st.subheader("VaR, CVaR & Sector Exposure")
+            st.caption(
+                "Uses historical returns and the selected date's portfolio weights "
+                "(via risk_analytics.py and sector_analysis.py)."
+            )
+            if st.button("Compute advanced risk & sector metrics", key="advanced_risk_sector"):
+                try:
+                    weights = weights_from_date_df(date_df)
+                    expected_returns = expected_returns_from_date_df(date_df)
+                    with st.spinner("Loading historical returns..."):
+                        returns_data = load_returns_data(list(weights.keys()))
+                    risk_metrics, concentration = analyze_portfolio_risk(weights, returns_data)
+                    sector_analysis = analyze_portfolio_sectors(
+                        weights,
+                        returns_data=returns_data,
+                        expected_returns=expected_returns,
+                    )
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("VaR 95%", f"{risk_metrics.var_95:.4f}")
+                    c2.metric("CVaR 95%", f"{risk_metrics.cvar_95:.4f}")
+                    c3.metric("Sharpe (hist.)", f"{risk_metrics.sharpe_ratio:.2f}")
+                    c4.metric("Max drawdown", f"{risk_metrics.max_drawdown:.2%}")
+
+                    c5, c6, c7 = st.columns(3)
+                    c5.metric("HHI (weights)", f"{concentration['herfindahl_index']:.4f}")
+                    c6.metric(
+                        "Sector concentration",
+                        sector_analysis.sector_concentration_level,
+                    )
+                    c7.metric(
+                        "Effective sectors",
+                        f"{sector_analysis.effective_number_of_sectors:.1f}",
+                    )
+
+                    sector_df = pd.DataFrame(sector_analysis_to_records(sector_analysis))
+                    if not sector_df.empty:
+                        sector_df["allocation_pct"] = sector_df["allocation"] * 100
+                        st.dataframe(
+                            sector_df[
+                                [
+                                    "sector",
+                                    "allocation_pct",
+                                    "holdings",
+                                    "volatility",
+                                    "expected_return",
+                                ]
+                            ].rename(
+                                columns={
+                                    "allocation_pct": "Allocation (%)",
+                                    "expected_return": "Expected return",
+                                }
+                            ),
+                            hide_index=True,
+                            width="stretch",
+                        )
+                except Exception as exc:
+                    st.error(f"Could not compute advanced metrics: {exc}")
 
 
     # ========================================================================
