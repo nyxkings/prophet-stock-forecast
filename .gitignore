@@ -25,7 +25,6 @@ MANIFEST
 .python-version
 
 # Poetry
-poetry.lock
 .poetry/
 
 # Virtual environments

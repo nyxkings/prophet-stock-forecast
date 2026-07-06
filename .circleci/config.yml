@@ -8,6 +8,8 @@ commands:
       - checkout
       - python/install-packages:
           pkg-manager: poetry
+          args: --with dev
+          no_output_timeout: 20m
 
 jobs:
   lint:
@@ -41,7 +43,7 @@ jobs:
       - install-project
       - run:
           name: Run tests with coverage
-          command: poetry run pytest --cov=src --cov-report=term-missing --cov-report=xml
+          command: poetry run pytest --cov-report=xml
       - store_artifacts:
           path: coverage.xml
           destination: coverage
