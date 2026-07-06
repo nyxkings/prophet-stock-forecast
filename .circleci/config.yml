@@ -2,22 +2,35 @@ version: 2.1
 orbs:
   python: circleci/python@2.0.0
 
-commands:
-  install-project:
+jobs:
+  setup:
+    executor:
+      name: python/default
+      tag: "3.12"
     steps:
       - checkout
+      - run:
+          name: Configure Poetry in-project virtualenv
+          command: poetry config virtualenvs.in-project true
       - python/install-packages:
           pkg-manager: poetry
           args: --with dev
           no_output_timeout: 20m
+          # Disable orb cache: parallel jobs race on /tmp/cci_pycache/lockfile
+          venv-cache: false
+          pypi-cache: false
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
 
-jobs:
   lint:
     executor:
       name: python/default
       tag: "3.12"
     steps:
-      - install-project
+      - attach_workspace:
+          at: .
       - run:
           name: Run ruff linting
           command: poetry run ruff check src tests
@@ -30,7 +43,8 @@ jobs:
       name: python/default
       tag: "3.12"
     steps:
-      - install-project
+      - attach_workspace:
+          at: .
       - run:
           name: Run mypy type checking
           command: poetry run mypy src
@@ -40,7 +54,8 @@ jobs:
       name: python/default
       tag: "3.12"
     steps:
-      - install-project
+      - attach_workspace:
+          at: .
       - run:
           name: Run tests with coverage
           command: poetry run pytest --cov-report=xml
@@ -52,6 +67,13 @@ workflows:
   version: 2
   ci:
     jobs:
-      - lint
-      - type-check
-      - test
+      - setup
+      - lint:
+          requires:
+            - setup
+      - type-check:
+          requires:
+            - setup
+      - test:
+          requires:
+            - setup
