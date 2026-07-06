@@ -138,9 +138,7 @@ class RiskAnalyzer:
         if len(excess_returns) == 0 or np.std(excess_returns) == 0:
             return 0.0
 
-        return float(
-            (np.mean(excess_returns) / np.std(excess_returns)) * np.sqrt(periods_per_year)
-        )
+        return float((np.mean(excess_returns) / np.std(excess_returns)) * np.sqrt(periods_per_year))
 
     @staticmethod
     def calculate_sortino_ratio(
@@ -168,9 +166,7 @@ class RiskAnalyzer:
         if downside_volatility == 0:
             return 0.0
 
-        return float(
-            (np.mean(excess_returns) / downside_volatility) * np.sqrt(periods_per_year)
-        )
+        return float((np.mean(excess_returns) / downside_volatility) * np.sqrt(periods_per_year))
 
     @staticmethod
     def calculate_max_drawdown(returns: np.ndarray | list[float]) -> float:
@@ -234,16 +230,12 @@ class RiskAnalyzer:
             cvar_95=RiskAnalyzer.calculate_cvar(returns_array, 0.95),
             cvar_99=RiskAnalyzer.calculate_cvar(returns_array, 0.99),
             sharpe_ratio=RiskAnalyzer.calculate_sharpe_ratio(returns_array, risk_free_rate),
-            sortino_ratio=RiskAnalyzer.calculate_sortino_ratio(
-                returns_array, risk_free_rate
-            ),
+            sortino_ratio=RiskAnalyzer.calculate_sortino_ratio(returns_array, risk_free_rate),
             max_drawdown=RiskAnalyzer.calculate_max_drawdown(returns_array),
             calmar_ratio=RiskAnalyzer.calculate_calmar_ratio(returns_array),
             volatility=float(np.std(returns_array) * np.sqrt(252)),
             skewness=float(stats.skew(returns_array)) if len(returns_array) > 2 else 0.0,
-            kurtosis=float(stats.kurtosis(returns_array))
-            if len(returns_array) > 3
-            else 0.0,
+            kurtosis=float(stats.kurtosis(returns_array)) if len(returns_array) > 3 else 0.0,
             beta=0.0,  # Set to market comparison
             alpha=0.0,  # Set to market comparison
         )
@@ -272,9 +264,7 @@ class RiskAnalyzer:
             cvar_99=RiskAnalyzer.calculate_cvar(returns_array, 0.99),
             volatility=float(np.std(returns_array) * np.sqrt(252)),
             skewness=float(stats.skew(returns_array)) if len(returns_array) > 2 else 0.0,
-            kurtosis=float(stats.kurtosis(returns_array))
-            if len(returns_array) > 3
-            else 0.0,
+            kurtosis=float(stats.kurtosis(returns_array)) if len(returns_array) > 3 else 0.0,
             return_mean=float(np.mean(returns_array) * 252),
             return_std=float(np.std(returns_array) * np.sqrt(252)),
         )
@@ -318,13 +308,19 @@ class RiskAnalyzer:
         return {
             "correlation_matrix": correlation_matrix.to_dict(),
             "avg_correlation": float(
-                correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].mean()
+                correlation_matrix.values[
+                    np.triu_indices_from(correlation_matrix.values, k=1)
+                ].mean()
             ),
             "min_correlation": float(
-                correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].min()
+                correlation_matrix.values[
+                    np.triu_indices_from(correlation_matrix.values, k=1)
+                ].min()
             ),
             "max_correlation": float(
-                correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].max()
+                correlation_matrix.values[
+                    np.triu_indices_from(correlation_matrix.values, k=1)
+                ].max()
             ),
         }
 
@@ -347,8 +343,7 @@ class RiskAnalyzer:
             Diversification ratio
         """
         weighted_vol = sum(
-            weights.get(ticker, 0) * volatilities.get(ticker, 0)
-            for ticker in weights
+            weights.get(ticker, 0) * volatilities.get(ticker, 0) for ticker in weights
         )
 
         if portfolio_volatility == 0:

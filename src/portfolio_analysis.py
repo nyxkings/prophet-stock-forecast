@@ -8,12 +8,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.backtesting import BacktestSummary, Backtester
+from src.backtesting import Backtester, BacktestSummary
 from src.extractor import extract_data
 from src.processor import preprocess_data
 from src.risk_analytics import RiskAnalyzer, RiskMetrics
 from src.sector_analysis import PortfolioSectorAnalysis, SectorAnalyzer
-from src.settings import END_DATE, PORTFOLIO_TICKERS, START_DATE
+from src.settings import END_DATE, START_DATE
 
 
 def weights_from_date_df(date_df: pd.DataFrame) -> dict[str, float]:
@@ -59,7 +59,8 @@ def compute_weighted_portfolio_returns(
         return np.array([])
 
     weight_series = pd.Series(weights)[tickers]
-    return (returns_df * weight_series).sum(axis=1).values
+    portfolio_returns = (returns_df * weight_series).sum(axis=1).to_numpy()
+    return np.asarray(portfolio_returns)
 
 
 def run_backtest(

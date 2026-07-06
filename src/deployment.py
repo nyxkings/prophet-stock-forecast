@@ -297,9 +297,7 @@ WantedBy=multi-user.target
         # Check environment variables
         import os
 
-        checks["env_vars"] = all(
-            os.getenv(var) for var in ["SUPABASE_URL", "SUPABASE_KEY"]
-        )
+        checks["env_vars"] = all(os.getenv(var) for var in ["SUPABASE_URL", "SUPABASE_KEY"])
 
         # Check Python version
         try:

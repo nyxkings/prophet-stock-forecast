@@ -88,9 +88,7 @@ def run_backtest_command(args: argparse.Namespace) -> None:
 
 def run_risk_command(args: argparse.Namespace) -> None:
     """Execute risk analysis command."""
-    weights, _, returns_data = _run_optimisation_for_analysis(
-        args.tickers, args.start, args.end
-    )
+    weights, _, returns_data = _run_optimisation_for_analysis(args.tickers, args.start, args.end)
     metrics, concentration = analyze_portfolio_risk(weights, returns_data)
     print("Portfolio risk metrics")
     print(f"  VaR 95%: {metrics.var_95:.4f}")

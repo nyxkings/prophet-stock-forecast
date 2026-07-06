@@ -20,6 +20,9 @@ def _process_ticker_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         Processed DataFrame with 'Price' and 'Returns' columns and date index
     """
+    if df.empty or "Close" not in df.columns:
+        return pd.DataFrame(columns=["Price", "Returns"])
+
     # Keep only relevant column which is the close price
     df = df[["Close"]].rename(columns={"Close": "Price"})
 
@@ -27,8 +30,11 @@ def _process_ticker_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["Returns"] = df["Price"].pct_change(fill_method=None)
     df = df.dropna()
 
+    if df.empty:
+        return pd.DataFrame(columns=["Price", "Returns"])
+
     # Convert index to date type
-    df.index = df.index.date
+    df.index = pd.to_datetime(df.index).date
     df.index.name = "Date"
 
     return df
@@ -49,10 +55,15 @@ def _extract_single_ticker_data(ticker: str, start_date: str, end_date: str) -> 
     try:
         stock = yf.Ticker(ticker)
         df = stock.history(start=start_date, end=end_date)
-        df_processed = _process_ticker_dataframe(df)
 
         if df.empty:
             logger.warning(f"No data available for ticker: {ticker}")
+            return None
+
+        df_processed = _process_ticker_dataframe(df)
+
+        if df_processed.empty:
+            logger.warning(f"No usable price data for ticker: {ticker}")
             return None
 
         return df_processed

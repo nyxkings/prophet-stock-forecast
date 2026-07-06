@@ -64,11 +64,13 @@ class TestMetricsCalculation:
 
     def test_calculate_metrics_full(self):
         """Test full metrics calculation."""
-        perf_df = pd.DataFrame({
-            "ticker": ["AAPL", "AAPL", "MSFT"],
-            "actual_price": [100, 200, 300],
-            "predicted_price": [110, 190, 310],
-        })
+        perf_df = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "AAPL", "MSFT"],
+                "actual_price": [100, 200, 300],
+                "predicted_price": [110, 190, 310],
+            }
+        )
 
         metrics = calculate_metrics(perf_df)
 
@@ -79,11 +81,13 @@ class TestMetricsCalculation:
 
     def test_calculate_metrics_by_ticker(self):
         """Test metrics calculation for specific ticker."""
-        perf_df = pd.DataFrame({
-            "ticker": ["AAPL", "AAPL", "MSFT", "MSFT"],
-            "actual_price": [100, 200, 300, 400],
-            "predicted_price": [110, 190, 310, 390],
-        })
+        perf_df = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "AAPL", "MSFT", "MSFT"],
+                "actual_price": [100, 200, 300, 400],
+                "predicted_price": [110, 190, 310, 390],
+            }
+        )
 
         aapl_metrics = calculate_metrics(perf_df, "AAPL")
         assert aapl_metrics["count"] == 2
@@ -107,18 +111,22 @@ class TestPortfolioMetrics:
 
     def test_calculate_portfolio_metrics(self):
         """Test portfolio metrics calculation."""
-        perf_df = pd.DataFrame({
-            "ticker": ["AAPL", "MSFT", "AAPL", "MSFT"],
-            "actual_price": [100, 200, 105, 210],
-            "predicted_price": [110, 190, 110, 200],
-            "evaluation_date": [
-                date(2024, 1, 1), date(2024, 1, 1),
-                date(2024, 1, 2), date(2024, 1, 2),
-            ],
-            "portfolio_weight": [0.6, 0.4, 0.6, 0.4],
-            "predicted_return": [0.02, 0.03, 0.01, 0.02],
-            "actual_return": [0.01, 0.02, 0.01, 0.02],
-        })
+        perf_df = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "MSFT", "AAPL", "MSFT"],
+                "actual_price": [100, 200, 105, 210],
+                "predicted_price": [110, 190, 110, 200],
+                "evaluation_date": [
+                    date(2024, 1, 1),
+                    date(2024, 1, 1),
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                ],
+                "portfolio_weight": [0.6, 0.4, 0.6, 0.4],
+                "predicted_return": [0.02, 0.03, 0.01, 0.02],
+                "actual_return": [0.01, 0.02, 0.01, 0.02],
+            }
+        )
 
         metrics = calculate_portfolio_metrics(perf_df)
 
@@ -128,14 +136,16 @@ class TestPortfolioMetrics:
 
     def test_compute_prediction_performance_includes_weighted_fields(self):
         """Performance records should include weights and returns for portfolio evaluation."""
-        data = pd.DataFrame({
-            "ticker": ["AAPL", "AAPL"],
-            "as_of_date": [date(2024, 1, 1), date(2024, 1, 2)],
-            "predicted_price": [100.0, 101.0],
-            "predicted_return": [0.02, 0.01],
-            "portfolio_weight": [1.0, 1.0],
-            "actual_prices_last_month": [[99.0, 100.0], [100.0, 102.0]],
-        })
+        data = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "AAPL"],
+                "as_of_date": [date(2024, 1, 1), date(2024, 1, 2)],
+                "predicted_price": [100.0, 101.0],
+                "predicted_return": [0.02, 0.01],
+                "portfolio_weight": [1.0, 1.0],
+                "actual_prices_last_month": [[99.0, 100.0], [100.0, 102.0]],
+            }
+        )
 
         perf_df = compute_prediction_performance(data.to_json(orient="records", date_format="iso"))
 
@@ -158,21 +168,27 @@ class TestVisualizationFunctions:
     @pytest.fixture
     def perf_df(self):
         """Create sample performance dataframe."""
-        return pd.DataFrame({
-            "ticker": ["AAPL", "AAPL", "MSFT", "MSFT"],
-            "evaluation_date": [
-                date(2024, 1, 1), date(2024, 1, 2),
-                date(2024, 1, 1), date(2024, 1, 2),
-            ],
-            "prediction_date": [
-                date(2024, 1, 1), date(2024, 1, 2),
-                date(2024, 1, 1), date(2024, 1, 2),
-            ],
-            "actual_price": [100, 105, 200, 210],
-            "predicted_price": [110, 110, 190, 200],
-            "error": [10, 5, -10, -10],
-            "error_pct": [0.1, 0.05, -0.05, -0.05],
-        })
+        return pd.DataFrame(
+            {
+                "ticker": ["AAPL", "AAPL", "MSFT", "MSFT"],
+                "evaluation_date": [
+                    date(2024, 1, 1),
+                    date(2024, 1, 2),
+                    date(2024, 1, 1),
+                    date(2024, 1, 2),
+                ],
+                "prediction_date": [
+                    date(2024, 1, 1),
+                    date(2024, 1, 2),
+                    date(2024, 1, 1),
+                    date(2024, 1, 2),
+                ],
+                "actual_price": [100, 105, 200, 210],
+                "predicted_price": [110, 110, 190, 200],
+                "error": [10, 5, -10, -10],
+                "error_pct": [0.1, 0.05, -0.05, -0.05],
+            }
+        )
 
     def test_create_error_heatmap(self, perf_df):
         """Test error heatmap creation."""
@@ -195,11 +211,13 @@ class TestVisualizationFunctions:
 
     def test_create_correlation_matrix_single_ticker(self):
         """Test correlation matrix with single ticker."""
-        perf_df = pd.DataFrame({
-            "ticker": ["AAPL", "AAPL"],
-            "evaluation_date": [date(2024, 1, 1), date(2024, 1, 2)],
-            "error_pct": [0.1, 0.05],
-        })
+        perf_df = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "AAPL"],
+                "evaluation_date": [date(2024, 1, 1), date(2024, 1, 2)],
+                "error_pct": [0.1, 0.05],
+            }
+        )
 
         fig = create_correlation_matrix(perf_df)
         assert fig is None  # Should return None for single ticker
@@ -224,14 +242,18 @@ class TestVisualizationFunctions:
 
     def test_create_weight_history_chart(self):
         """Test weight history chart creation."""
-        df = pd.DataFrame({
-            "ticker": ["AAPL", "MSFT", "AAPL", "MSFT"],
-            "as_of_date": [
-                date(2024, 1, 1), date(2024, 1, 1),
-                date(2024, 1, 2), date(2024, 1, 2),
-            ],
-            "portfolio_weight": [0.5, 0.5, 0.6, 0.4],
-        })
+        df = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "MSFT", "AAPL", "MSFT"],
+                "as_of_date": [
+                    date(2024, 1, 1),
+                    date(2024, 1, 1),
+                    date(2024, 1, 2),
+                    date(2024, 1, 2),
+                ],
+                "portfolio_weight": [0.5, 0.5, 0.6, 0.4],
+            }
+        )
 
         fig = create_weight_history_chart(df)
 
@@ -273,18 +295,22 @@ class TestDataParsing:
 
     def test_export_to_csv(self):
         """Test CSV export."""
-        perf_df = pd.DataFrame({
-            "ticker": ["AAPL", "MSFT"],
-            "actual_price": [100, 200],
-            "predicted_price": [110, 190],
-        })
+        perf_df = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "MSFT"],
+                "actual_price": [100, 200],
+                "predicted_price": [110, 190],
+            }
+        )
 
-        date_df = pd.DataFrame({
-            "ticker": ["AAPL", "MSFT"],
-            "predicted_price": [110, 190],
-            "predicted_return": [0.1, 0.05],
-            "portfolio_weight": [0.5, 0.5],
-        })
+        date_df = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "MSFT"],
+                "predicted_price": [110, 190],
+                "predicted_return": [0.1, 0.05],
+                "portfolio_weight": [0.5, 0.5],
+            }
+        )
 
         csv_content = export_to_csv(perf_df, date_df)
 
@@ -330,11 +356,13 @@ class TestEdgeCases:
 
     def test_large_date_range(self):
         """Test with large date ranges."""
-        df = pd.DataFrame({
-            "ticker": ["AAPL"] * 100,
-            "as_of_date": pd.date_range(start="2023-01-01", periods=100).date,
-            "portfolio_weight": [0.5] * 100,
-        })
+        df = pd.DataFrame(
+            {
+                "ticker": ["AAPL"] * 100,
+                "as_of_date": pd.date_range(start="2023-01-01", periods=100).date,
+                "portfolio_weight": [0.5] * 100,
+            }
+        )
 
         fig = create_weight_history_chart(df)
         assert fig is not None

@@ -218,8 +218,7 @@ class TestModelPipeline:
 
         # Create minimal dataset with proper date index
         short_data = pd.Series(
-            [100.0, 101.0, 102.0],
-            index=pd.bdate_range(start="2023-01-01", periods=3)
+            [100.0, 101.0, 102.0], index=pd.bdate_range(start="2023-01-01", periods=3)
         )
 
         # Should not raise error even with short data

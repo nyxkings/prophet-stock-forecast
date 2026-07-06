@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.backtesting import BacktestSummary
 from src.portfolio_analysis import (
     analyze_portfolio_risk,
     compute_weighted_portfolio_returns,
@@ -11,7 +12,6 @@ from src.portfolio_analysis import (
     format_backtest_summary,
     weights_from_date_df,
 )
-from src.backtesting import BacktestSummary
 
 
 class TestPortfolioAnalysisHelpers:

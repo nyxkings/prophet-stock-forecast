@@ -173,18 +173,24 @@ class EmailAlerter:
         ):
             return False
 
+        smtp_host = self.config.smtp_host
+        sender_email = self.config.sender_email
+        sender_password = self.config.sender_password
+        recipient_emails = self.config.recipient_emails
+        assert smtp_host and sender_email and sender_password and recipient_emails
+
         try:
             msg = MIMEText(message.format_email_body())
             msg["Subject"] = f"[{message.severity.value.upper()}] Job Alert: {message.rule.value}"
-            msg["From"] = self.config.sender_email
-            msg["To"] = ", ".join(self.config.recipient_emails)
+            msg["From"] = sender_email
+            msg["To"] = ", ".join(recipient_emails)
 
-            with smtplib.SMTP(self.config.smtp_host, self.config.smtp_port) as server:
+            with smtplib.SMTP(smtp_host, self.config.smtp_port) as server:
                 server.starttls()
-                server.login(self.config.sender_email, self.config.sender_password)
+                server.login(sender_email, sender_password)
                 server.sendmail(
-                    self.config.sender_email,
-                    self.config.recipient_emails,
+                    sender_email,
+                    recipient_emails,
                     msg.as_string(),
                 )
 
@@ -283,9 +289,7 @@ class AlertManager:
 
         # Low success rate
         success_rate = job.metrics.success_rate()
-        threshold = self.rules_config.get(AlertRule.LOW_SUCCESS_RATE, {}).get(
-            "threshold", 70.0
-        )
+        threshold = self.rules_config.get(AlertRule.LOW_SUCCESS_RATE, {}).get("threshold", 70.0)
         if success_rate < threshold:
             alert = AlertMessage(
                 AlertRule.LOW_SUCCESS_RATE,
@@ -309,9 +313,7 @@ class AlertManager:
             alerts.append(alert)
 
         # High error count
-        error_threshold = self.rules_config.get(AlertRule.HIGH_ERROR_COUNT, {}).get(
-            "threshold", 5
-        )
+        error_threshold = self.rules_config.get(AlertRule.HIGH_ERROR_COUNT, {}).get("threshold", 5)
         if len(job.metrics.errors) > error_threshold:
             alert = AlertMessage(
                 AlertRule.HIGH_ERROR_COUNT,

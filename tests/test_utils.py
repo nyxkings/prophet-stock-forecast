@@ -181,7 +181,9 @@ def assert_dataframe_properties(
         assert list(df.columns) == expected_columns, f"Column mismatch: {df.columns}"
 
     if expected_index_name:
-        assert df.index.name == expected_index_name, f"Index name is {df.index.name}, expected {expected_index_name}"
+        assert (
+            df.index.name == expected_index_name
+        ), f"Index name is {df.index.name}, expected {expected_index_name}"
 
 
 def generate_test_dates(

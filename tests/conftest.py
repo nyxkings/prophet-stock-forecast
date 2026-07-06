@@ -87,11 +87,11 @@ def sample_optimization_result() -> dict[str, float]:
 def mock_yfinance(sample_ticker_data):
     """Mock yfinance.Ticker to avoid API calls during testing."""
     with patch("src.extractor.yf.Ticker") as mock_ticker:
+
         def create_mock_ticker(ticker: str):
             mock_obj = MagicMock()
             mock_obj.history.return_value = sample_ticker_data.get(
-                ticker,
-                pd.DataFrame({"Close": [100]})
+                ticker, pd.DataFrame({"Close": [100]})
             )
             return mock_obj
 

@@ -340,9 +340,7 @@ class SectorAnalyzer:
         sector_weights = SectorAnalyzer.calculate_sector_weights(weights, custom_map)
 
         # Calculate concentration metrics
-        hhi, effective_sectors = SectorAnalyzer.calculate_sector_concentration(
-            sector_weights
-        )
+        hhi, effective_sectors = SectorAnalyzer.calculate_sector_concentration(sector_weights)
 
         # Calculate sector metrics if data provided
         if returns_data:
@@ -353,9 +351,7 @@ class SectorAnalyzer:
             # Create minimal metrics without data
             sector_metrics = {}
             for sector, sector_weight in sector_weights.items():
-                sector_groups = SectorAnalyzer.group_portfolio_by_sector(
-                    weights, custom_map
-                )
+                sector_groups = SectorAnalyzer.group_portfolio_by_sector(weights, custom_map)
                 sector_metrics[sector] = SectorMetrics(
                     sector=sector,
                     allocation=sector_weight,
@@ -370,7 +366,7 @@ class SectorAnalyzer:
                 )
 
         # Find largest and most diversified sectors
-        largest_sector = max(sector_weights, key=sector_weights.get)
+        largest_sector = max(sector_weights, key=lambda k: sector_weights[k])
         least_diversified_sector = min(
             sector_metrics, key=lambda s: sector_metrics[s].diversification_ratio
         )

@@ -196,9 +196,13 @@ class Backtester:
 
                         for ticker in self.tickers:
                             if ticker in next_actual.columns:
-                                close_prices = next_actual[("Close", ticker)] if isinstance(
-                                    next_actual.columns, pd.MultiIndex
-                                ) else next_actual[ticker] if ticker in next_actual.columns else None
+                                close_prices = (
+                                    next_actual[("Close", ticker)]
+                                    if isinstance(next_actual.columns, pd.MultiIndex)
+                                    else next_actual[ticker]
+                                    if ticker in next_actual.columns
+                                    else None
+                                )
 
                                 if close_prices is not None and len(close_prices) >= 2:
                                     today_price = close_prices.iloc[0]
@@ -208,12 +212,8 @@ class Backtester:
                                         tomorrow_price - today_price
                                     ) / today_price
                             else:
-                                actual_prices[ticker] = result.get("predictions", {}).get(
-                                    ticker, 0
-                                )
-                                actual_returns[ticker] = result[
-                                    "predicted_returns"
-                                ].get(ticker, 0)
+                                actual_prices[ticker] = result.get("predictions", {}).get(ticker, 0)
+                                actual_returns[ticker] = result["predicted_returns"].get(ticker, 0)
 
                         # Calculate metrics
                         backtest_result = self._calculate_result(
@@ -242,9 +242,7 @@ class Backtester:
         actual_returns: dict[str, float],
     ) -> BacktestResult:
         """Calculate result for a single backtest date."""
-        predicted_prices = prediction.get("predicted_prices") or prediction.get(
-            "predictions", {}
-        )
+        predicted_prices = prediction.get("predicted_prices") or prediction.get("predictions", {})
         predicted_returns = prediction.get("predicted_returns", {})
         predicted_weights = prediction.get("weights", {})
 
@@ -349,7 +347,8 @@ class Backtester:
         ticker_mape = {}
         for ticker in self.tickers:
             ticker_errors = [
-                r.prediction_errors.get(ticker, 0) for r in self.results
+                r.prediction_errors.get(ticker, 0)
+                for r in self.results
                 if ticker in r.prediction_errors
             ]
             if ticker_errors:
@@ -376,7 +375,8 @@ class Backtester:
             if actual_returns
             else 0.0,
             strategy_outperformance=float(
-                np.prod([1 + r for r in actual_returns]) / np.prod([1 + r for r in predicted_returns])
+                np.prod([1 + r for r in actual_returns])
+                / np.prod([1 + r for r in predicted_returns])
                 - 1
             )
             if (predicted_returns and actual_returns)
@@ -386,7 +386,9 @@ class Backtester:
             else 0.0,
             avg_portfolio_actual_return=float(np.mean(actual_returns)) if actual_returns else 0.0,
             portfolio_sharpe_ratio=sharpe_ratio,
-            portfolio_volatility=float(np.std(actual_returns) * np.sqrt(252)) if actual_returns else 0.0,
+            portfolio_volatility=float(np.std(actual_returns) * np.sqrt(252))
+            if actual_returns
+            else 0.0,
             portfolio_max_drawdown=max_drawdown,
             ticker_mape=ticker_mape,
         )
@@ -398,12 +400,14 @@ class Backtester:
 
         data = []
         for result in self.results:
-            data.append({
-                "date": result.date,
-                "price_mape": result.price_mape,
-                "return_mape": result.return_mape,
-                "predicted_return": result.portfolio_predicted_return,
-                "actual_return": result.portfolio_actual_return,
-            })
+            data.append(
+                {
+                    "date": result.date,
+                    "price_mape": result.price_mape,
+                    "return_mape": result.return_mape,
+                    "predicted_return": result.portfolio_predicted_return,
+                    "actual_return": result.portfolio_actual_return,
+                }
+            )
 
         return pd.DataFrame(data)

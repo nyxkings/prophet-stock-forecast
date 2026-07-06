@@ -30,8 +30,8 @@ class TestDataExtractionEdgeCases:
 
         df = pd.DataFrame({"High": [100, 101, 102]}, index=pd.date_range("2023-01-01", periods=3))
 
-        with pytest.raises(KeyError):
-            _process_ticker_dataframe(df)
+        result = _process_ticker_dataframe(df)
+        assert result.empty
 
     def test_extract_with_all_nan_values(self):
         """Test extraction with all NaN values."""
@@ -139,7 +139,9 @@ class TestModelEdgeCases:
         from src.model import ProphetModel
 
         model = ProphetModel()
-        constant_data = pd.Series([100.0] * 100, index=pd.bdate_range(start="2023-01-01", periods=100))
+        constant_data = pd.Series(
+            [100.0] * 100, index=pd.bdate_range(start="2023-01-01", periods=100)
+        )
 
         model.fit(constant_data)
         forecast = model.predict_next(constant_data)
@@ -154,7 +156,7 @@ class TestModelEdgeCases:
         model = ProphetModel()
         volatile_data = pd.Series(
             [100.0 + np.random.normal(0, 50) for _ in range(100)],
-            index=pd.bdate_range(start="2023-01-01", periods=100)
+            index=pd.bdate_range(start="2023-01-01", periods=100),
         )
 
         model.fit(volatile_data)

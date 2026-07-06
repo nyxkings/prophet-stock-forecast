@@ -14,7 +14,20 @@ def generate_mock_portfolio_data() -> pd.DataFrame:
         DataFrame with columns: ticker, as_of_date, predicted_price, predicted_return,
         portfolio_weight, created_at, actual_prices_last_month (as JSON strings)
     """
-    tickers = ["AMD", "MSFT", "AAPL", "TSLA", "AMZN", "NVDA", "META", "GOOG", "TSM", "JPM", "NFLX", "PLTR"]
+    tickers = [
+        "AMD",
+        "MSFT",
+        "AAPL",
+        "TSLA",
+        "AMZN",
+        "NVDA",
+        "META",
+        "GOOG",
+        "TSM",
+        "JPM",
+        "NFLX",
+        "PLTR",
+    ]
 
     # Predicted prices from the pipeline
     predicted_prices = {
@@ -64,6 +77,7 @@ def generate_mock_portfolio_data() -> pd.DataFrame:
 
     # Generate price history (last 20 trading days with noise)
     import numpy as np
+
     np.random.seed(42)
 
     base_prices = {
@@ -99,15 +113,17 @@ def generate_mock_portfolio_data() -> pd.DataFrame:
                 base = base * (1 + drift + noise)
                 price_history.append(float(base))
 
-            records.append({
-                "ticker": ticker,
-                "as_of_date": as_of_date.date(),
-                "predicted_price": float(predicted_prices[ticker]),
-                "predicted_return": float(predicted_returns[ticker]),
-                "portfolio_weight": float(portfolio_weights[ticker]),
-                "created_at": as_of_date,
-                "actual_prices_last_month": json.dumps(price_history),  # Store as JSON string
-            })
+            records.append(
+                {
+                    "ticker": ticker,
+                    "as_of_date": as_of_date.date(),
+                    "predicted_price": float(predicted_prices[ticker]),
+                    "predicted_return": float(predicted_returns[ticker]),
+                    "portfolio_weight": float(portfolio_weights[ticker]),
+                    "created_at": as_of_date,
+                    "actual_prices_last_month": json.dumps(price_history),  # Store as JSON string
+                }
+            )
 
     df = pd.DataFrame(records)
     return df

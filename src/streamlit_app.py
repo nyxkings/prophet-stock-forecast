@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 from functools import lru_cache
+from typing import cast
 
 import altair as alt
 import numpy as np
@@ -103,23 +104,31 @@ def calculate_portfolio_metrics(perf_df: pd.DataFrame) -> dict[str, float]:
         )
     else:
         daily_returns = perf_df.groupby("evaluation_date").apply(
-            lambda x: pd.Series({
-                "actual_return": x["actual_price"].pct_change().mean(),
-                "predicted_return": x["predicted_price"].pct_change().mean(),
-            }),
-            include_groups=False
+            lambda x: pd.Series(
+                {
+                    "actual_return": x["actual_price"].pct_change().mean(),
+                    "predicted_return": x["predicted_price"].pct_change().mean(),
+                }
+            ),
+            include_groups=False,
         )
 
     metrics = {}
     if not daily_returns.empty:
         metrics["sharpe_actual"] = float(
-            daily_returns["actual_return"].mean() / (daily_returns["actual_return"].std() + 1e-8) * np.sqrt(252)
+            daily_returns["actual_return"].mean()
+            / (daily_returns["actual_return"].std() + 1e-8)
+            * np.sqrt(252)
         )
         metrics["sharpe_predicted"] = float(
-            daily_returns["predicted_return"].mean() / (daily_returns["predicted_return"].std() + 1e-8) * np.sqrt(252)
+            daily_returns["predicted_return"].mean()
+            / (daily_returns["predicted_return"].std() + 1e-8)
+            * np.sqrt(252)
         )
         metrics["volatility_actual"] = float(daily_returns["actual_return"].std() * np.sqrt(252))
-        metrics["volatility_predicted"] = float(daily_returns["predicted_return"].std() * np.sqrt(252))
+        metrics["volatility_predicted"] = float(
+            daily_returns["predicted_return"].std() * np.sqrt(252)
+        )
 
     return metrics
 
@@ -262,9 +271,9 @@ def compute_prediction_performance(data_json: str) -> pd.DataFrame:
 
     perf_df["absolute_error"] = perf_df["error"].abs()
     perf_df["error_pct"] = perf_df["error"] / perf_df["predicted_price"]
-    perf_df["actual_return"] = (
-        perf_df["actual_price"] - perf_df["predicted_price"]
-    ) / perf_df["predicted_price"]
+    perf_df["actual_return"] = (perf_df["actual_price"] - perf_df["predicted_price"]) / perf_df[
+        "predicted_price"
+    ]
     return perf_df
 
 
@@ -306,10 +315,7 @@ def create_error_heatmap(perf_df: pd.DataFrame) -> go.Figure | None:
         return None
 
     pivot_df = perf_df.pivot_table(
-        index="ticker",
-        columns="evaluation_date",
-        values="error_pct",
-        aggfunc="mean"
+        index="ticker", columns="evaluation_date", values="error_pct", aggfunc="mean"
     )
 
     if pivot_df.empty:
@@ -324,7 +330,7 @@ def create_error_heatmap(perf_df: pd.DataFrame) -> go.Figure | None:
             y=pivot_df.index,
             colorscale="RdBu_r",
             zmid=0,
-            hovertemplate="Ticker: %{y}<br>Date: %{x}<br>Error: %{z:.2f}%<extra></extra>"
+            hovertemplate="Ticker: %{y}<br>Date: %{x}<br>Error: %{z:.2f}%<extra></extra>",
         )
     )
     fig.update_layout(
@@ -342,9 +348,7 @@ def create_correlation_matrix(perf_df: pd.DataFrame) -> go.Figure | None:
         return None
 
     error_by_ticker = perf_df.pivot_table(
-        index="evaluation_date",
-        columns="ticker",
-        values="error_pct"
+        index="evaluation_date", columns="ticker", values="error_pct"
     )
 
     if error_by_ticker.empty or error_by_ticker.shape[1] < 2:
@@ -364,7 +368,7 @@ def create_correlation_matrix(perf_df: pd.DataFrame) -> go.Figure | None:
             text=np.round(corr_matrix.values, 2),
             texttemplate="%{text}",
             textfont={"size": 10},
-            hovertemplate="Ticker 1: %{y}<br>Ticker 2: %{x}<br>Correlation: %{z:.2f}<extra></extra>"
+            hovertemplate="Ticker 1: %{y}<br>Ticker 2: %{x}<br>Correlation: %{z:.2f}<extra></extra>",
         )
     )
     fig.update_layout(
@@ -383,13 +387,15 @@ def create_returns_distribution(perf_df: pd.DataFrame, ticker: str) -> go.Figure
     data["error_pct"] = data["error_pct"] * 100
 
     fig = go.Figure()
-    fig.add_trace(go.Histogram(
-        x=data["error_pct"],
-        name="Error Distribution",
-        nbinsx=20,
-        marker=dict(color="rgba(31, 119, 180, 0.7)"),
-        hovertemplate="Error Range: %{x:.1f}%<br>Count: %{y}<extra></extra>"
-    ))
+    fig.add_trace(
+        go.Histogram(
+            x=data["error_pct"],
+            name="Error Distribution",
+            nbinsx=20,
+            marker=dict(color="rgba(31, 119, 180, 0.7)"),
+            hovertemplate="Error Range: %{x:.1f}%<br>Count: %{y}<extra></extra>",
+        )
+    )
 
     fig.update_layout(
         title=f"Prediction Error Distribution - {ticker}",
@@ -408,24 +414,33 @@ def create_cumulative_returns_chart(perf_df: pd.DataFrame, ticker: str) -> alt.C
         return None
 
     # Prepare data for Altair
-    long_df = pd.DataFrame({
-        "Date": list(data["evaluation_date"]) + list(data["evaluation_date"]),
-        "Cumulative Return": list(data["actual_cumulative"].fillna(0)) + list(data["predicted_cumulative"].fillna(0)),
-        "Type": ["Actual"] * len(data) + ["Predicted"] * len(data),
-    })
+    long_df = pd.DataFrame(
+        {
+            "Date": list(data["evaluation_date"]) + list(data["evaluation_date"]),
+            "Cumulative Return": list(data["actual_cumulative"].fillna(0))
+            + list(data["predicted_cumulative"].fillna(0)),
+            "Type": ["Actual"] * len(data) + ["Predicted"] * len(data),
+        }
+    )
 
     chart = (
         alt.Chart(long_df)
         .mark_line(point=True)
         .encode(
             x=alt.X("Date:T", title="Date"),
-            y=alt.Y("Cumulative Return:Q", title="Cumulative Return (%)", scale=alt.Scale(zero=False)),
-            color=alt.Color("Type:N", title="Type", scale=alt.Scale(domain=["Actual", "Predicted"], range=["#1f77b4", "#ff7f0e"])),
-            tooltip=["Date:T", "Type:N", alt.Tooltip("Cumulative Return:Q", format=".2f")]
+            y=alt.Y(
+                "Cumulative Return:Q", title="Cumulative Return (%)", scale=alt.Scale(zero=False)
+            ),
+            color=alt.Color(
+                "Type:N",
+                title="Type",
+                scale=alt.Scale(domain=["Actual", "Predicted"], range=["#1f77b4", "#ff7f0e"]),
+            ),
+            tooltip=["Date:T", "Type:N", alt.Tooltip("Cumulative Return:Q", format=".2f")],
         )
     )
 
-    return chart
+    return cast(alt.Chart, chart)
 
 
 def create_weight_history_chart(df: pd.DataFrame) -> go.Figure | None:
@@ -438,13 +453,15 @@ def create_weight_history_chart(df: pd.DataFrame) -> go.Figure | None:
     fig = go.Figure()
     for ticker in df_sorted["ticker"].unique():
         ticker_data = df_sorted[df_sorted["ticker"] == ticker].sort_values("as_of_date")
-        fig.add_trace(go.Scatter(
-            x=ticker_data["as_of_date"],
-            y=ticker_data["portfolio_weight"],
-            name=ticker,
-            mode="lines+markers",
-            hovertemplate="Date: %{x}<br>Weight: %{y:.2f}<extra></extra>"
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=ticker_data["as_of_date"],
+                y=ticker_data["portfolio_weight"],
+                name=ticker,
+                mode="lines+markers",
+                hovertemplate="Date: %{x}<br>Weight: %{y:.2f}<extra></extra>",
+            )
+        )
 
     fig.update_layout(
         title="Portfolio Weight History",
@@ -471,7 +488,11 @@ def export_to_csv(perf_df: pd.DataFrame, date_df: pd.DataFrame) -> str:
 
     # Export latest weights
     output.append("LATEST PORTFOLIO WEIGHTS")
-    output.append(date_df[["ticker", "predicted_price", "predicted_return", "portfolio_weight"]].to_csv(index=False))
+    output.append(
+        date_df[["ticker", "predicted_price", "predicted_return", "portfolio_weight"]].to_csv(
+            index=False
+        )
+    )
 
     return "\n".join(output)
 
@@ -480,9 +501,7 @@ def run_dashboard() -> None:
     """Run the enhanced dashboard with tabbed interface."""
     st.set_page_config(page_title="Portfolio Forecast Dashboard", layout="wide")
     st.title("📊 Portfolio Forecast Dashboard")
-    st.caption(
-        "Advanced portfolio analysis with predictions, metrics, and visualizations."
-    )
+    st.caption("Advanced portfolio analysis with predictions, metrics, and visualizations.")
 
     # Load data
     df = load_supabase_predictions()
@@ -498,7 +517,7 @@ def run_dashboard() -> None:
         selected_date = st.selectbox(
             "Select as-of date",
             options=available_dates,
-            format_func=lambda d: d.strftime("%Y-%m-%d")
+            format_func=lambda d: d.strftime("%Y-%m-%d"),
         )
 
     with col2:
@@ -510,17 +529,19 @@ def run_dashboard() -> None:
             label="📥 Export CSV",
             data=csv_data,
             file_name=f"portfolio_analysis_{selected_date}.csv",
-            mime="text/csv"
+            mime="text/csv",
         )
 
     # Create tabbed interface
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📈 Overview",
-        "🎯 Prediction Accuracy",
-        "📊 Advanced Analytics",
-        "⚙️ Performance Metrics",
-        "🎯 Efficient Frontier"
-    ])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        [
+            "📈 Overview",
+            "🎯 Prediction Accuracy",
+            "📊 Advanced Analytics",
+            "⚙️ Performance Metrics",
+            "🎯 Efficient Frontier",
+        ]
+    )
 
     # ========================================================================
     # TAB 1: OVERVIEW
@@ -539,7 +560,9 @@ def run_dashboard() -> None:
                 st.caption("Current portfolio allocation")
 
         with col2:
-            summary_table = date_df[["ticker", "predicted_price", "predicted_return", "portfolio_weight"]].copy()
+            summary_table = date_df[
+                ["ticker", "predicted_price", "predicted_return", "portfolio_weight"]
+            ].copy()
             summary_table["predicted_return_pct"] = summary_table["predicted_return"] * 100
             summary_table["portfolio_weight_pct"] = summary_table["portfolio_weight"] * 100
 
@@ -569,10 +592,12 @@ def run_dashboard() -> None:
             min_value=min(df["as_of_date"]),
             max_value=max(df["as_of_date"]),
             value=(max(df["as_of_date"]) - timedelta(days=30), max(df["as_of_date"])),
-            format="YYYY-MM-DD"
+            format="YYYY-MM-DD",
         )
 
-        weight_df = df[(df["as_of_date"] >= date_range[0]) & (df["as_of_date"] <= date_range[1])].copy()
+        weight_df = df[
+            (df["as_of_date"] >= date_range[0]) & (df["as_of_date"] <= date_range[1])
+        ].copy()
         weight_chart = create_weight_history_chart(weight_df)
         if weight_chart:
             st.plotly_chart(weight_chart, width="stretch")
@@ -585,9 +610,7 @@ def run_dashboard() -> None:
     with tab2:
         tickers = date_df["ticker"].tolist()
         selected_ticker = st.selectbox(
-            "Select ticker for detail analysis",
-            options=tickers,
-            index=0
+            "Select ticker for detail analysis", options=tickers, index=0
         )
 
         ticker_row = date_df.set_index("ticker").loc[selected_ticker]
@@ -597,8 +620,7 @@ def run_dashboard() -> None:
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric(
-                "Latest Actual Price",
-                f"${latest_actual:.2f}" if latest_actual is not None else "—"
+                "Latest Actual Price", f"${latest_actual:.2f}" if latest_actual is not None else "—"
             )
         with col2:
             st.metric("Predicted Price", f"${ticker_row['predicted_price']:.2f}")
@@ -616,8 +638,12 @@ def run_dashboard() -> None:
         if ticker_perf_for_trend.empty:
             st.info("No historical prediction data available for this ticker yet.")
         else:
-            min_price = float(ticker_perf_for_trend[["actual_price", "predicted_price"]].min().min())
-            max_price = float(ticker_perf_for_trend[["actual_price", "predicted_price"]].max().max())
+            min_price = float(
+                ticker_perf_for_trend[["actual_price", "predicted_price"]].min().min()
+            )
+            max_price = float(
+                ticker_perf_for_trend[["actual_price", "predicted_price"]].max().max()
+            )
             default_min = min_price * 0.8
             default_max = max_price * 1.2
             slider_min = float(round(default_min * 0.9, 2))
@@ -628,7 +654,7 @@ def run_dashboard() -> None:
                 min_value=slider_min,
                 max_value=slider_max,
                 value=(float(round(default_min, 2)), float(round(default_max, 2))),
-                key=f"price_slider_{selected_ticker}"
+                key=f"price_slider_{selected_ticker}",
             )
 
             long_df_trend = ticker_perf_for_trend.melt(
@@ -782,13 +808,15 @@ def run_dashboard() -> None:
             metrics_data = []
             for ticker in sorted(perf_df["ticker"].unique()):
                 ticker_metrics = calculate_metrics(perf_df, ticker)
-                metrics_data.append({
-                    "Ticker": ticker,
-                    "MAPE (%)": ticker_metrics["mape"],
-                    "RMSE": ticker_metrics["rmse"],
-                    "MAE": ticker_metrics["mae"],
-                    "Predictions": ticker_metrics["count"],
-                })
+                metrics_data.append(
+                    {
+                        "Ticker": ticker,
+                        "MAPE (%)": ticker_metrics["mape"],
+                        "RMSE": ticker_metrics["rmse"],
+                        "MAE": ticker_metrics["mae"],
+                        "Predictions": ticker_metrics["count"],
+                    }
+                )
 
             metrics_df = pd.DataFrame(metrics_data)
             st.dataframe(
@@ -799,7 +827,7 @@ def run_dashboard() -> None:
                     "MAPE (%)": st.column_config.NumberColumn(format="%.2f%%"),
                     "RMSE": st.column_config.NumberColumn(format="$%.2f"),
                     "MAE": st.column_config.NumberColumn(format="$%.2f"),
-                }
+                },
             )
 
             # Sharpe ratio and volatility if available
@@ -811,29 +839,27 @@ def run_dashboard() -> None:
                 if "sharpe_actual" in portfolio_metrics:
                     with col1:
                         st.metric(
-                            "Sharpe Ratio (Actual)",
-                            f"{portfolio_metrics['sharpe_actual']:.2f}"
+                            "Sharpe Ratio (Actual)", f"{portfolio_metrics['sharpe_actual']:.2f}"
                         )
 
                 if "sharpe_predicted" in portfolio_metrics:
                     with col2:
                         st.metric(
                             "Sharpe Ratio (Predicted)",
-                            f"{portfolio_metrics['sharpe_predicted']:.2f}"
+                            f"{portfolio_metrics['sharpe_predicted']:.2f}",
                         )
 
                 if "volatility_actual" in portfolio_metrics:
                     with col3:
                         st.metric(
-                            "Volatility (Actual)",
-                            f"{portfolio_metrics['volatility_actual']:.2f}"
+                            "Volatility (Actual)", f"{portfolio_metrics['volatility_actual']:.2f}"
                         )
 
                 if "volatility_predicted" in portfolio_metrics:
                     with col4:
                         st.metric(
                             "Volatility (Predicted)",
-                            f"{portfolio_metrics['volatility_predicted']:.2f}"
+                            f"{portfolio_metrics['volatility_predicted']:.2f}",
                         )
 
             st.subheader("VaR, CVaR & Sector Exposure")
@@ -895,7 +921,6 @@ def run_dashboard() -> None:
                 except Exception as exc:
                     st.error(f"Could not compute advanced metrics: {exc}")
 
-
     # ========================================================================
     # TAB 5: EFFICIENT FRONTIER
     # ========================================================================
@@ -928,7 +953,7 @@ def run_dashboard() -> None:
                 cov_matrix = pd.DataFrame(
                     np.diag(np.abs(returns_array) * 0.01 + 0.001),
                     index=returns_series.index,
-                    columns=returns_series.index
+                    columns=returns_series.index,
                 )
                 # Add small correlations
                 for i, idx1 in enumerate(returns_series.index):
@@ -941,11 +966,7 @@ def run_dashboard() -> None:
 
                 # Generate frontier
                 num_points = st.slider(
-                    "Number of frontier points",
-                    min_value=10,
-                    max_value=100,
-                    value=50,
-                    step=10
+                    "Number of frontier points", min_value=10, max_value=100, value=50, step=10
                 )
 
                 frontier_result = EfficientFrontier.generate_frontier(
@@ -1042,7 +1063,11 @@ def run_dashboard() -> None:
                 # Plot current portfolio if valid
                 if len(current_weights) > 0:
                     try:
-                        curr_vol, curr_ret, curr_sharpe = EfficientFrontier.calculate_portfolio_metrics(
+                        (
+                            curr_vol,
+                            curr_ret,
+                            curr_sharpe,
+                        ) = EfficientFrontier.calculate_portfolio_metrics(
                             current_weights,
                             returns_series,
                             cov_matrix,
@@ -1089,16 +1114,13 @@ def run_dashboard() -> None:
 
                     st.markdown("**Weights:**")
                     min_var_weights_df = pd.DataFrame(
-                        list(min_var.weights.items()),
-                        columns=["Ticker", "Weight"]
+                        list(min_var.weights.items()), columns=["Ticker", "Weight"]
                     )
                     min_var_weights_df = min_var_weights_df.sort_values("Weight", ascending=False)
                     st.dataframe(
                         min_var_weights_df,
                         hide_index=True,
-                        column_config={
-                            "Weight": st.column_config.NumberColumn(format="%.2f%%")
-                        }
+                        column_config={"Weight": st.column_config.NumberColumn(format="%.2f%%")},
                     )
 
                 with col2:
@@ -1109,16 +1131,15 @@ def run_dashboard() -> None:
 
                     st.markdown("**Weights:**")
                     max_sharpe_weights_df = pd.DataFrame(
-                        list(max_sharpe.weights.items()),
-                        columns=["Ticker", "Weight"]
+                        list(max_sharpe.weights.items()), columns=["Ticker", "Weight"]
                     )
-                    max_sharpe_weights_df = max_sharpe_weights_df.sort_values("Weight", ascending=False)
+                    max_sharpe_weights_df = max_sharpe_weights_df.sort_values(
+                        "Weight", ascending=False
+                    )
                     st.dataframe(
                         max_sharpe_weights_df,
                         hide_index=True,
-                        column_config={
-                            "Weight": st.column_config.NumberColumn(format="%.2f%%")
-                        }
+                        column_config={"Weight": st.column_config.NumberColumn(format="%.2f%%")},
                     )
 
         except Exception as e:

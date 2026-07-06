@@ -191,7 +191,9 @@ class JobLogger:
         """Record predictions made."""
         self.metrics.predictions_made += count
 
-    def finish(self, success: bool = True, result_summary: dict[str, Any] | None = None) -> JobExecution:
+    def finish(
+        self, success: bool = True, result_summary: dict[str, Any] | None = None
+    ) -> JobExecution:
         """Finish job logging."""
         self.metrics.end_time = datetime.now(UTC).isoformat()
 
@@ -227,11 +229,7 @@ class JobHistoryManager:
     def get_recent_jobs(self, days: int = 7) -> list[JobExecution]:
         """Get jobs from last N days."""
         cutoff = datetime.now(UTC) - timedelta(days=days)
-        return [
-            job
-            for job in self.history
-            if datetime.fromisoformat(job.created_at) >= cutoff
-        ]
+        return [job for job in self.history if datetime.fromisoformat(job.created_at) >= cutoff]
 
     def get_job_by_id(self, job_id: str) -> JobExecution | None:
         """Get specific job by ID."""
@@ -272,9 +270,7 @@ class JobHistoryManager:
         original_len = len(self.history)
 
         self.history = [
-            job
-            for job in self.history
-            if datetime.fromisoformat(job.created_at) >= cutoff
+            job for job in self.history if datetime.fromisoformat(job.created_at) >= cutoff
         ]
 
         return original_len - len(self.history)

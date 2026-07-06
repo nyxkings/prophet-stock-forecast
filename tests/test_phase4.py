@@ -357,7 +357,11 @@ class TestDeployment:
         result = HealthChecker.check_disk_space()
 
         assert result.name == "disk_space"
-        assert result.status in [HealthStatus.HEALTHY, HealthStatus.DEGRADED, HealthStatus.UNHEALTHY]
+        assert result.status in [
+            HealthStatus.HEALTHY,
+            HealthStatus.DEGRADED,
+            HealthStatus.UNHEALTHY,
+        ]
         assert result.details is not None
 
     def test_health_checker_memory(self):
@@ -365,7 +369,11 @@ class TestDeployment:
         result = HealthChecker.check_memory()
 
         assert result.name == "memory"
-        assert result.status in [HealthStatus.HEALTHY, HealthStatus.DEGRADED, HealthStatus.UNHEALTHY]
+        assert result.status in [
+            HealthStatus.HEALTHY,
+            HealthStatus.DEGRADED,
+            HealthStatus.UNHEALTHY,
+        ]
         assert result.details is not None
 
     def test_health_checker_cpu(self):
@@ -373,7 +381,11 @@ class TestDeployment:
         result = HealthChecker.check_cpu()
 
         assert result.name == "cpu"
-        assert result.status in [HealthStatus.HEALTHY, HealthStatus.DEGRADED, HealthStatus.UNHEALTHY]
+        assert result.status in [
+            HealthStatus.HEALTHY,
+            HealthStatus.DEGRADED,
+            HealthStatus.UNHEALTHY,
+        ]
         assert result.details is not None
 
     def test_health_checker_all_checks(self):

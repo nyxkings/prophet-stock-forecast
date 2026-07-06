@@ -264,9 +264,7 @@ class TestSectorMetrics:
         weights = {"AAPL": 0.6, "MSFT": 0.4}
         expected_returns = {"AAPL": 0.12, "MSFT": 0.10}
 
-        metrics = SectorAnalyzer.calculate_sector_metrics(
-            weights, returns_data, expected_returns
-        )
+        metrics = SectorAnalyzer.calculate_sector_metrics(weights, returns_data, expected_returns)
 
         assert "Technology" in metrics
         assert metrics["Technology"].sector == "Technology"
@@ -377,9 +375,7 @@ class TestPortfolioSectorAnalysis:
             "JPM": 0.25,
         }
 
-        analysis = SectorAnalyzer.analyze_portfolio_sectors(
-            weights, returns_data=returns_data
-        )
+        analysis = SectorAnalyzer.analyze_portfolio_sectors(weights, returns_data=returns_data)
 
         # Technology sector has 3 holdings, Financials has 1
         # So Technology should be more diversified
@@ -462,9 +458,7 @@ class TestEdgeCases:
             "TICKER3": 0.4,
         }
 
-        analysis = SectorAnalyzer.analyze_portfolio_sectors(
-            weights, custom_map=custom_map
-        )
+        analysis = SectorAnalyzer.analyze_portfolio_sectors(weights, custom_map=custom_map)
 
         assert "CustomSector1" in analysis.sector_weights
         assert "CustomSector2" in analysis.sector_weights

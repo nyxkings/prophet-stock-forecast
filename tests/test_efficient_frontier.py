@@ -235,19 +235,13 @@ class TestGenerateFrontier:
         # Generally, returns should increase with risk (volatility)
         # But not strictly monotonic due to optimization
         points = result.frontier_points
-        np.mean(
-            [p.expected_return for p in points[:5]]
-        )
-        avg_return_high_vol = np.mean(
-            [p.expected_return for p in points[-5:]]
-        )
+        np.mean([p.expected_return for p in points[:5]])
+        avg_return_high_vol = np.mean([p.expected_return for p in points[-5:]])
         # High volatility should generally have higher expected return
         # (at least higher than the most conservative)
         assert avg_return_high_vol >= 0
 
-    def test_min_variance_portfolio_identified(
-        self, sample_mean_returns, sample_cov_matrix
-    ):
+    def test_min_variance_portfolio_identified(self, sample_mean_returns, sample_cov_matrix):
         """Test that minimum variance portfolio is correctly identified."""
         result = EfficientFrontier.generate_frontier(
             sample_mean_returns,
@@ -258,9 +252,7 @@ class TestGenerateFrontier:
         # Min variance should have lowest volatility
         assert all(p.volatility >= min_var.volatility for p in result.frontier_points)
 
-    def test_max_sharpe_portfolio_identified(
-        self, sample_mean_returns, sample_cov_matrix
-    ):
+    def test_max_sharpe_portfolio_identified(self, sample_mean_returns, sample_cov_matrix):
         """Test that maximum Sharpe portfolio is correctly identified."""
         result = EfficientFrontier.generate_frontier(
             sample_mean_returns,
@@ -298,9 +290,7 @@ class TestGenerateFrontier:
         assert min(lambdas) >= 1.0
         assert max(lambdas) <= 50.0
 
-    def test_frontier_with_allocation_constraints(
-        self, sample_mean_returns, sample_cov_matrix
-    ):
+    def test_frontier_with_allocation_constraints(self, sample_mean_returns, sample_cov_matrix):
         """Test frontier respects allocation constraints."""
         result = EfficientFrontier.generate_frontier(
             sample_mean_returns,
@@ -359,9 +349,7 @@ class TestPlotFrontier:
         assert volatility > 0
         assert exp_return > 0
 
-    def test_plot_frontier_invalid_weights(
-        self, sample_mean_returns, sample_cov_matrix
-    ):
+    def test_plot_frontier_invalid_weights(self, sample_mean_returns, sample_cov_matrix):
         """Test plotting with invalid current weights (mismatched tickers)."""
         result = EfficientFrontier.generate_frontier(
             sample_mean_returns,
@@ -385,15 +373,15 @@ class TestPlotFrontier:
             num_points=10,
         )
         # Verify structure that would be used in plotting
-        assert hasattr(result, 'frontier_points')
-        assert hasattr(result, 'min_variance_portfolio')
-        assert hasattr(result, 'max_sharpe_portfolio')
+        assert hasattr(result, "frontier_points")
+        assert hasattr(result, "min_variance_portfolio")
+        assert hasattr(result, "max_sharpe_portfolio")
 
         # Verify frontier points have required attributes
         for point in result.frontier_points:
-            assert hasattr(point, 'volatility')
-            assert hasattr(point, 'expected_return')
-            assert hasattr(point, 'sharpe_ratio')
+            assert hasattr(point, "volatility")
+            assert hasattr(point, "expected_return")
+            assert hasattr(point, "sharpe_ratio")
 
 
 class TestFormatPortfolioWeights:
