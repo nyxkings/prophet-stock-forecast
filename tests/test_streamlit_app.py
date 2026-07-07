@@ -154,6 +154,24 @@ class TestPortfolioMetrics:
         assert "predicted_return" in perf_df.columns
         assert "actual_return" in perf_df.columns
 
+    def test_compute_prediction_performance_single_date_fallback(self):
+        """Single Supabase run should still produce one comparison per ticker."""
+        data = pd.DataFrame(
+            {
+                "ticker": ["AAPL", "MSFT"],
+                "as_of_date": [date(2024, 1, 1), date(2024, 1, 1)],
+                "predicted_price": [105.0, 210.0],
+                "predicted_return": [0.02, 0.01],
+                "portfolio_weight": [0.6, 0.4],
+                "actual_prices_last_month": [[100.0, 102.0], [200.0, 205.0]],
+            }
+        )
+
+        perf_df = compute_prediction_performance(data.to_json(orient="records", date_format="iso"))
+
+        assert len(perf_df) == 2
+        assert set(perf_df["ticker"]) == {"AAPL", "MSFT"}
+
     def test_calculate_portfolio_metrics_empty(self):
         """Test portfolio metrics with empty data."""
         perf_df = pd.DataFrame()

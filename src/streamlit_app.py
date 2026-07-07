@@ -17,6 +17,7 @@ import streamlit as st
 from src.database import get_supabase_client
 from src.efficient_frontier import EfficientFrontier
 from src.mock_data import generate_mock_portfolio_data
+from src.optimiser import calculate_mean_variance
 from src.portfolio_analysis import (
     analyze_portfolio_risk,
     analyze_portfolio_sectors,
@@ -134,13 +135,11 @@ def calculate_portfolio_metrics(perf_df: pd.DataFrame) -> dict[str, float]:
 
 
 @st.cache_data(ttl=300)
-def load_supabase_predictions() -> pd.DataFrame:
-    """Return latest Supabase rows (one per ticker per date) or mock data if unavailable."""
+def _fetch_supabase_predictions() -> tuple[pd.DataFrame, str]:
+    """Load predictions from Supabase, falling back to mock data when needed."""
     client = get_supabase_client()
     if client is None:
-        # Use mock data if Supabase is not available
-        st.info("💡 Using mock data for demonstration (Supabase not configured)")
-        return generate_mock_portfolio_data()
+        return generate_mock_portfolio_data(), "mock"
 
     response = (
         client.table(SUPABASE_TABLE_NAME)
@@ -151,9 +150,7 @@ def load_supabase_predictions() -> pd.DataFrame:
     )
     data = getattr(response, "data", None)
     if not data:
-        # Fallback to mock data if no data in Supabase
-        st.info("💡 No data in Supabase. Using mock data for demonstration.")
-        return generate_mock_portfolio_data()
+        return generate_mock_portfolio_data(), "mock"
 
     df = pd.DataFrame(data)
     if "as_of_date" in df.columns:
@@ -167,6 +164,12 @@ def load_supabase_predictions() -> pd.DataFrame:
     if "actual_prices_last_month" in df.columns:
         df["actual_prices_last_month"] = df["actual_prices_last_month"].apply(_parse_price_history)
 
+    return df, "supabase"
+
+
+def load_supabase_predictions() -> pd.DataFrame:
+    """Return latest Supabase rows (one per ticker per date) or mock data if unavailable."""
+    df, _source = _fetch_supabase_predictions()
     return df
 
 
@@ -267,7 +270,32 @@ def compute_prediction_performance(data_json: str) -> pd.DataFrame:
 
     perf_df = pd.DataFrame(records)
     if perf_df.empty:
-        return perf_df
+        # Single-run fallback: compare latest prediction to last known actual price
+        for ticker, group in df.groupby("ticker"):
+            row = group.sort_values("as_of_date").iloc[-1]
+            prices = row.get("actual_prices_last_month")
+            if isinstance(prices, str):
+                prices = _parse_price_history(prices)
+            if not prices:
+                continue
+
+            actual_price = float(prices[-1])
+            predicted_price = float(row["predicted_price"])
+            records.append(
+                {
+                    "ticker": ticker,
+                    "prediction_date": row["as_of_date"],
+                    "evaluation_date": row["as_of_date"],
+                    "predicted_price": predicted_price,
+                    "actual_price": actual_price,
+                    "error": actual_price - predicted_price,
+                    "portfolio_weight": float(row.get("portfolio_weight", 0.0)),
+                    "predicted_return": float(row.get("predicted_return", 0.0)),
+                }
+            )
+        perf_df = pd.DataFrame(records)
+        if perf_df.empty:
+            return perf_df
 
     perf_df["absolute_error"] = perf_df["error"].abs()
     perf_df["error_pct"] = perf_df["error"] / perf_df["predicted_price"]
@@ -497,6 +525,69 @@ def export_to_csv(perf_df: pd.DataFrame, date_df: pd.DataFrame) -> str:
     return "\n".join(output)
 
 
+def _render_advanced_risk_sector_metrics(date_df: pd.DataFrame) -> None:
+    """Compute and display VaR/CVaR and sector exposure for the selected date."""
+    cache_key = f"advanced_metrics_{date_df['as_of_date'].iloc[0]}"
+    if cache_key in st.session_state:
+        cached = st.session_state[cache_key]
+        risk_metrics = cached["risk_metrics"]
+        concentration = cached["concentration"]
+        sector_analysis = cached["sector_analysis"]
+    else:
+        try:
+            weights = weights_from_date_df(date_df)
+            expected_returns = expected_returns_from_date_df(date_df)
+            with st.spinner("Loading historical returns for risk analysis..."):
+                returns_data = load_returns_data(list(weights.keys()))
+            risk_metrics, concentration = analyze_portfolio_risk(weights, returns_data)
+            sector_analysis = analyze_portfolio_sectors(
+                weights,
+                returns_data=returns_data,
+                expected_returns=expected_returns,
+            )
+            st.session_state[cache_key] = {
+                "risk_metrics": risk_metrics,
+                "concentration": concentration,
+                "sector_analysis": sector_analysis,
+            }
+        except Exception as exc:
+            st.warning(f"Advanced risk metrics unavailable: {exc}")
+            return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("VaR 95%", f"{risk_metrics.var_95:.4f}")
+    c2.metric("CVaR 95%", f"{risk_metrics.cvar_95:.4f}")
+    c3.metric("Sharpe (hist.)", f"{risk_metrics.sharpe_ratio:.2f}")
+    c4.metric("Max drawdown", f"{risk_metrics.max_drawdown:.2%}")
+
+    c5, c6, c7 = st.columns(3)
+    c5.metric("HHI (weights)", f"{concentration['herfindahl_index']:.4f}")
+    c6.metric("Sector concentration", sector_analysis.sector_concentration_level)
+    c7.metric("Effective sectors", f"{sector_analysis.effective_number_of_sectors:.1f}")
+
+    sector_df = pd.DataFrame(sector_analysis_to_records(sector_analysis))
+    if not sector_df.empty:
+        sector_df["allocation_pct"] = sector_df["allocation"] * 100
+        st.dataframe(
+            sector_df[
+                [
+                    "sector",
+                    "allocation_pct",
+                    "holdings",
+                    "volatility",
+                    "expected_return",
+                ]
+            ].rename(
+                columns={
+                    "allocation_pct": "Allocation (%)",
+                    "expected_return": "Expected return",
+                }
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+
+
 def run_dashboard() -> None:
     """Run the enhanced dashboard with tabbed interface."""
     st.set_page_config(page_title="Portfolio Forecast Dashboard", layout="wide")
@@ -504,10 +595,15 @@ def run_dashboard() -> None:
     st.caption("Advanced portfolio analysis with predictions, metrics, and visualizations.")
 
     # Load data
-    df = load_supabase_predictions()
+    df, data_source = _fetch_supabase_predictions()
     if df.empty:
         st.error("❌ No prediction data available. Unable to load mock data either.")
         return
+
+    if data_source == "mock":
+        st.info("💡 Showing mock data (Supabase not configured or empty).")
+    else:
+        st.success("✅ Loaded live optimisation results from Supabase.")
 
     # Create two columns: date selector and export button
     col1, col2 = st.columns([3, 1])
@@ -556,7 +652,7 @@ def run_dashboard() -> None:
             if pie is None:
                 st.info("Weights are zero or missing for this date.")
             else:
-                st.plotly_chart(pie, width="stretch")
+                st.plotly_chart(pie, use_container_width=True)
                 st.caption("Current portfolio allocation")
 
         with col2:
@@ -577,7 +673,7 @@ def run_dashboard() -> None:
             st.dataframe(
                 summary_table[["Ticker", "Predicted Price", "Return (%)", "Weight (%)"]],
                 hide_index=True,
-                width="stretch",
+                use_container_width=True,
                 column_config={
                     "Predicted Price": st.column_config.NumberColumn(format="$%.2f"),
                     "Return (%)": st.column_config.NumberColumn(format="%.2f%%"),
@@ -600,7 +696,7 @@ def run_dashboard() -> None:
         ].copy()
         weight_chart = create_weight_history_chart(weight_df)
         if weight_chart:
-            st.plotly_chart(weight_chart, width="stretch")
+            st.plotly_chart(weight_chart, use_container_width=True)
         else:
             st.info("No weight history available for selected date range.")
 
@@ -688,13 +784,13 @@ def run_dashboard() -> None:
                     ],
                 )
             )
-            st.altair_chart(line_chart_trend, width="stretch")
+            st.altair_chart(line_chart_trend, use_container_width=True)
 
         # Cumulative returns
         st.subheader(f"Cumulative Returns · {selected_ticker}")
         cumulative_chart = create_cumulative_returns_chart(perf_df, selected_ticker)
         if cumulative_chart:
-            st.altair_chart(cumulative_chart, width="stretch")
+            st.altair_chart(cumulative_chart, use_container_width=True)
         else:
             st.info("Not enough data to calculate cumulative returns.")
 
@@ -702,7 +798,7 @@ def run_dashboard() -> None:
         st.subheader(f"Error Distribution · {selected_ticker}")
         error_dist = create_returns_distribution(perf_df, selected_ticker)
         if error_dist:
-            st.plotly_chart(error_dist, width="stretch")
+            st.plotly_chart(error_dist, use_container_width=True)
         else:
             st.info("No error data available.")
 
@@ -740,7 +836,7 @@ def run_dashboard() -> None:
                         ]
                     ],
                     hide_index=True,
-                    width="stretch",
+                    use_container_width=True,
                     column_config={
                         "Predicted Price": st.column_config.NumberColumn(format="$%.2f"),
                         "Actual Price": st.column_config.NumberColumn(format="$%.2f"),
@@ -763,7 +859,7 @@ def run_dashboard() -> None:
                 st.subheader("Prediction Error Heatmap")
                 heatmap = create_error_heatmap(perf_df)
                 if heatmap:
-                    st.plotly_chart(heatmap, width="stretch")
+                    st.plotly_chart(heatmap, use_container_width=True)
                 else:
                     st.info("Not enough data for heatmap.")
 
@@ -771,7 +867,7 @@ def run_dashboard() -> None:
                 st.subheader("Error Correlation Matrix")
                 corr_chart = create_correlation_matrix(perf_df)
                 if corr_chart:
-                    st.plotly_chart(corr_chart, width="stretch")
+                    st.plotly_chart(corr_chart, use_container_width=True)
                 else:
                     st.info("Not enough tickers or data for correlation analysis.")
 
@@ -822,7 +918,7 @@ def run_dashboard() -> None:
             st.dataframe(
                 metrics_df,
                 hide_index=True,
-                width="stretch",
+                use_container_width=True,
                 column_config={
                     "MAPE (%)": st.column_config.NumberColumn(format="%.2f%%"),
                     "RMSE": st.column_config.NumberColumn(format="$%.2f"),
@@ -867,59 +963,7 @@ def run_dashboard() -> None:
                 "Uses historical returns and the selected date's portfolio weights "
                 "(via risk_analytics.py and sector_analysis.py)."
             )
-            if st.button("Compute advanced risk & sector metrics", key="advanced_risk_sector"):
-                try:
-                    weights = weights_from_date_df(date_df)
-                    expected_returns = expected_returns_from_date_df(date_df)
-                    with st.spinner("Loading historical returns..."):
-                        returns_data = load_returns_data(list(weights.keys()))
-                    risk_metrics, concentration = analyze_portfolio_risk(weights, returns_data)
-                    sector_analysis = analyze_portfolio_sectors(
-                        weights,
-                        returns_data=returns_data,
-                        expected_returns=expected_returns,
-                    )
-
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("VaR 95%", f"{risk_metrics.var_95:.4f}")
-                    c2.metric("CVaR 95%", f"{risk_metrics.cvar_95:.4f}")
-                    c3.metric("Sharpe (hist.)", f"{risk_metrics.sharpe_ratio:.2f}")
-                    c4.metric("Max drawdown", f"{risk_metrics.max_drawdown:.2%}")
-
-                    c5, c6, c7 = st.columns(3)
-                    c5.metric("HHI (weights)", f"{concentration['herfindahl_index']:.4f}")
-                    c6.metric(
-                        "Sector concentration",
-                        sector_analysis.sector_concentration_level,
-                    )
-                    c7.metric(
-                        "Effective sectors",
-                        f"{sector_analysis.effective_number_of_sectors:.1f}",
-                    )
-
-                    sector_df = pd.DataFrame(sector_analysis_to_records(sector_analysis))
-                    if not sector_df.empty:
-                        sector_df["allocation_pct"] = sector_df["allocation"] * 100
-                        st.dataframe(
-                            sector_df[
-                                [
-                                    "sector",
-                                    "allocation_pct",
-                                    "holdings",
-                                    "volatility",
-                                    "expected_return",
-                                ]
-                            ].rename(
-                                columns={
-                                    "allocation_pct": "Allocation (%)",
-                                    "expected_return": "Expected return",
-                                }
-                            ),
-                            hide_index=True,
-                            width="stretch",
-                        )
-                except Exception as exc:
-                    st.error(f"Could not compute advanced metrics: {exc}")
+            _render_advanced_risk_sector_metrics(date_df)
 
     # ========================================================================
     # TAB 5: EFFICIENT FRONTIER
@@ -933,65 +977,40 @@ def run_dashboard() -> None:
 
         # Get expected returns and covariance from latest data
         try:
-            # Extract returns data from the latest portfolio
-            returns_data = {}
-            for _, row in date_df.iterrows():
-                ticker = row["ticker"]
-                returns_data[ticker] = row["predicted_return"]
+            weights = weights_from_date_df(date_df)
+            expected_returns = expected_returns_from_date_df(date_df)
 
-            # Create covariance matrix from historical returns
-            # For now, use a simplified approach with returns data
-            returns_series = pd.Series(returns_data)
-
-            if len(returns_series) < 2:
+            if len(weights) < 2:
                 st.warning("Need at least 2 assets to generate frontier.")
             else:
-                # Create simple covariance matrix (identity scaled by variance)
-                # This uses the returns as a proxy for risk
-                returns_array = returns_series.values
-                # Use returns variance as diagonal elements
-                cov_matrix = pd.DataFrame(
-                    np.diag(np.abs(returns_array) * 0.01 + 0.001),
-                    index=returns_series.index,
-                    columns=returns_series.index,
-                )
-                # Add small correlations
-                for i, idx1 in enumerate(returns_series.index):
-                    for j, idx2 in enumerate(returns_series.index):
-                        if i < j:
-                            cov_matrix.loc[idx1, idx2] = 0.3 * np.sqrt(
-                                cov_matrix.loc[idx1, idx1] * cov_matrix.loc[idx2, idx2]
-                            )
-                            cov_matrix.loc[idx2, idx1] = cov_matrix.loc[idx1, idx2]
+                with st.spinner("Loading historical returns for efficient frontier..."):
+                    returns_data = load_returns_data(list(weights.keys()))
 
-                # Generate frontier
+                mean_returns, cov_matrix = calculate_mean_variance(
+                    returns_data,
+                    expected_returns=expected_returns,
+                )
+
                 num_points = st.slider(
                     "Number of frontier points", min_value=10, max_value=100, value=50, step=10
                 )
 
                 frontier_result = EfficientFrontier.generate_frontier(
-                    returns_series,
+                    mean_returns,
                     cov_matrix,
                     num_points=num_points,
                 )
 
-                # Create and display frontier plot
                 st.subheader("Risk vs Return")
 
-                # Get current weights if available
-                current_weights = {}
-                for _, row in date_df.iterrows():
-                    current_weights[row["ticker"]] = row["portfolio_weight"]
+                current_weights = weights
 
-                # Generate Plotly figure manually (since plotly may not be fully available)
                 fig = go.Figure()
 
-                # Extract frontier data
                 volatilities = [p.volatility for p in frontier_result.frontier_points]
                 returns_list = [p.expected_return for p in frontier_result.frontier_points]
                 sharpe_ratios = [p.sharpe_ratio for p in frontier_result.frontier_points]
 
-                # Plot frontier curve
                 fig.add_trace(
                     go.Scatter(
                         x=volatilities,
@@ -1005,7 +1024,6 @@ def run_dashboard() -> None:
                     )
                 )
 
-                # Plot frontier points with Sharpe ratio coloring
                 fig.add_trace(
                     go.Scatter(
                         x=volatilities,
@@ -1026,7 +1044,6 @@ def run_dashboard() -> None:
                     )
                 )
 
-                # Highlight minimum variance portfolio
                 min_var = frontier_result.min_variance_portfolio
                 fig.add_trace(
                     go.Scatter(
@@ -1043,7 +1060,6 @@ def run_dashboard() -> None:
                     )
                 )
 
-                # Highlight maximum Sharpe portfolio
                 max_sharpe = frontier_result.max_sharpe_portfolio
                 fig.add_trace(
                     go.Scatter(
@@ -1060,8 +1076,7 @@ def run_dashboard() -> None:
                     )
                 )
 
-                # Plot current portfolio if valid
-                if len(current_weights) > 0:
+                if current_weights:
                     try:
                         (
                             curr_vol,
@@ -1069,7 +1084,7 @@ def run_dashboard() -> None:
                             curr_sharpe,
                         ) = EfficientFrontier.calculate_portfolio_metrics(
                             current_weights,
-                            returns_series,
+                            mean_returns,
                             cov_matrix,
                         )
                         fig.add_trace(
@@ -1089,7 +1104,6 @@ def run_dashboard() -> None:
                     except (KeyError, ValueError):
                         pass
 
-                # Update layout
                 fig.update_layout(
                     title="Efficient Frontier - Risk vs Return",
                     xaxis_title="Portfolio Volatility (Risk)",
@@ -1099,9 +1113,8 @@ def run_dashboard() -> None:
                     template="plotly_white",
                 )
 
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
 
-                # Display portfolio details below frontier
                 st.subheader("Portfolio Allocations")
 
                 col1, col2 = st.columns(2)
@@ -1116,6 +1129,7 @@ def run_dashboard() -> None:
                     min_var_weights_df = pd.DataFrame(
                         list(min_var.weights.items()), columns=["Ticker", "Weight"]
                     )
+                    min_var_weights_df["Weight"] = min_var_weights_df["Weight"] * 100
                     min_var_weights_df = min_var_weights_df.sort_values("Weight", ascending=False)
                     st.dataframe(
                         min_var_weights_df,
@@ -1133,6 +1147,7 @@ def run_dashboard() -> None:
                     max_sharpe_weights_df = pd.DataFrame(
                         list(max_sharpe.weights.items()), columns=["Ticker", "Weight"]
                     )
+                    max_sharpe_weights_df["Weight"] = max_sharpe_weights_df["Weight"] * 100
                     max_sharpe_weights_df = max_sharpe_weights_df.sort_values(
                         "Weight", ascending=False
                     )
