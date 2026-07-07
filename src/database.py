@@ -7,6 +7,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from supabase import Client, create_client
@@ -14,6 +15,26 @@ from supabase import Client, create_client
 from src.settings import SUPABASE_TABLE_NAME
 
 logger = logging.getLogger(__name__)
+
+
+def _load_project_env() -> None:
+    """Load variables from project-root .env when not already in the environment."""
+    env_file = Path(__file__).resolve().parents[1] / ".env"
+    if not env_file.is_file():
+        return
+
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_project_env()
 
 
 def get_supabase_client() -> Client | None:
