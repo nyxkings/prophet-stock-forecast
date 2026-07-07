@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Allow `streamlit run src/streamlit_app.py` (script path) as well as `dashboard.py`.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+# ruff: noqa: E402
 import json
 from datetime import date, timedelta
 from functools import lru_cache
