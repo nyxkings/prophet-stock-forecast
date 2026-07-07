@@ -38,7 +38,7 @@ run:
 	poetry run python -m src.main
 
 dashboard:
-	poetry run streamlit run src/streamlit_app.py
+	poetry run streamlit run dashboard.py
 
 backtest:
 	poetry run python -m src.main backtest
