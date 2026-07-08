@@ -441,39 +441,86 @@ IMPLEMENTATION
 
 This chapter describes the practical implementation of the Prophet-based portfolio
 optimisation system developed in Python. The implementation translates the
-methodological framework presented in Chapter Three into a working software
-platform comprising twelve source modules, a comprehensive test suite, a
-Streamlit dashboard, and automated deployment pipelines.
+methodological framework presented in Chapter Three into a deployable software
+platform comprising a modular source-code library, automated data and forecasting
+pipelines, mean-variance portfolio optimisation, persistent storage, interactive
+visualisation, and supplementary analysis tools for backtesting and risk
+assessment.
 
-The system was implemented using a modular architecture in which each component
-was developed and unit-tested independently before integration through the
-central orchestration function run_optimisation() in src/main.py. Version control
-was managed using Git and GitHub (repository: nyxkings/prophet-stock-forecast),
-with continuous integration configured via GitHub Actions.
+The system follows a layered architecture in which each component was developed
+and unit-tested independently before integration through the central orchestration
+function run_optimisation() in src/main.py. Version control was managed using Git
+and GitHub (repository: nyxkings/prophet-stock-forecast), with scheduled
+production execution configured via GitHub Actions. Local development used Cursor
+as the integrated development environment, with dependency management handled by
+Poetry (pyproject.toml).
+
+A defining design decision in the production pipeline is the explicit separation
+of forecasting inputs from risk estimation: Prophet-generated predicted returns
+are passed directly to the optimiser as the expected return vector μ, while the
+covariance matrix Σ is computed exclusively from historical daily returns. This
+ensures that portfolio weights respond to forward-looking forecasts while risk
+is measured from observed market co-movement, consistent with the methodology in
+Chapter Three.
 
 The portfolio under study consists of twelve publicly traded equities configured
 in src/settings.py: AMD, MSFT, AAPL, TSLA, AMZN, NVDA, META, GOOG, TSM, JPM,
 NFLX, and PLTR. Risk parameters were set to a balanced investor profile with a
-risk aversion coefficient λ = 5, minimum allocation of 5% per asset, and
-maximum allocation of 100%.  
+risk aversion coefficient λ = 5, a minimum allocation of 5% per asset, and a
+maximum allocation of 100%. Historical data defaults to the period from
+2024-01-01 through the current date (END_DATE), providing approximately one to
+two years of training data for Prophet and covariance estimation.
 
 
 4.2 DEVELOPMENT ENVIRONMENT AND PROJECT STRUCTURE
 
-The system was developed in Python 3 using Cursor as the integrated development
-environment. Dependencies were managed with Poetry (pyproject.toml) and include
-Prophet, pandas, NumPy, SciPy, yfinance, Supabase, and Streamlit.
+4.2.1 Technology Stack
 
-The project directory structure is organised as follows:
+The system was implemented in Python 3.12. Table 4.1 summarises the principal
+libraries and their roles in the implementation.
 
-  src/                  — Application source code (12 modules)
-  tests/                — Unit, integration, and edge-case tests
+Table 4.1: Core Technology Stack
+
+| Library / Tool        | Version (approx.) | Role in Implementation                          |
+|-----------------------|-------------------|-------------------------------------------------|
+| Python                | 3.12              | Core programming language                       |
+| Poetry                | latest            | Dependency and virtual-environment management   |
+| Prophet               | 1.1.5+            | Time-series price forecasting per ticker        |
+| pandas                | 2.0+              | DataFrames, returns, alignment                  |
+| NumPy                 | 1.24+             | Numerical arrays for optimisation               |
+| SciPy                 | 1.11+             | SLSQP mean-variance solver                      |
+| yfinance              | 0.2.28+           | Historical OHLCV download from Yahoo Finance    |
+| pandas-market-calendars | 5.1.3+        | US exchange holiday calendar (XNYS)             |
+| Supabase (Python SDK) | 2.23+             | PostgreSQL persistence via REST API             |
+| Streamlit             | 1.28+             | Interactive dashboard and visualisation         |
+| Plotly / Altair       | 6.4 / 5.5         | Charts in the dashboard                         |
+| pytest                | 7.4+              | Unit, integration, and edge-case testing        |
+
+4.2.2 Directory Structure
+
+The project directory is organised to separate application logic, tests,
+automation, and deployment assets:
+
+  src/                  — Application source code (19 Python modules)
+  tests/                — Unit, integration, edge-case, and dashboard tests
   .github/workflows/    — CI/CD and daily optimisation scheduling
-  scripts/              — Deployment scripts
+  scripts/              — VPS deployment shell scripts
+  dashboard.py          — Root-level Streamlit entry point
+  pyproject.toml        — Poetry dependencies and tool configuration
+  Makefile              — Convenience targets (run, dashboard, backtest, test)
+
+Within src/, modules are grouped by responsibility:
+
+  Core pipeline:     extractor.py, processor.py, model.py, optimiser.py,
+                     main.py, database.py, settings.py
+  Presentation:      streamlit_app.py, mock_data.py
+  Analysis:          backtesting.py, risk_analytics.py, sector_analysis.py,
+                     portfolio_analysis.py, analysis_cli.py, efficient_frontier.py
+  Operations:        monitoring.py, alerts.py, deployment.py
 
 [SCREENSHOT 4.1]
   WHAT TO CAPTURE: Project folder tree in Cursor's file explorer showing
-                   src/, tests/, pyproject.toml, README.md
+                   src/, tests/, dashboard.py, pyproject.toml, Makefile
   FILE:            Project root directory
   CAPTION:         "Figure 4.1: Project directory structure in the development
                    environment."
@@ -483,22 +530,28 @@ The project directory structure is organised as follows:
 
 All system-wide constants are centralised in src/settings.py to provide a
 single source of truth for portfolio composition, risk parameters, date ranges,
-Prophet model hyperparameters, and database table names.
+Prophet model hyperparameters, and database table names. Centralising
+configuration avoids scattering magic numbers across modules and allows the
+entire portfolio universe or risk profile to be changed in one file.
 
 Key configuration values implemented in the system:
 
-  - PORTFOLIO_TICKERS: list of 12 stock symbols
-  - RISK_AVERSION = 5 (balanced investor)
-  - MINIMUM_ALLOCATION = 0.05 (5% floor per asset)
+  - PORTFOLIO_TICKERS: list of 12 stock symbols (the investable universe)
+  - RISK_AVERSION = 5 (λ in the mean-variance objective; balanced profile)
+  - MINIMUM_ALLOCATION = 0.05 (5% floor per asset; enforces diversification)
   - MAXIMUM_ALLOCATION = 1.0 (100% ceiling per asset)
-  - PROPHET_PARAMS: yearly and weekly seasonality enabled
+  - START_DATE = "2024-01-01" (default historical window start)
+  - END_DATE = current date (dynamic; updated on each run)
+  - PROPHET_PARAMS: yearly_seasonality=True, weekly_seasonality=True,
+    daily_seasonality=False
+  - HOLIDAY_NAME_MAP: maps XNYS holiday names to Prophet-compatible identifiers
   - SUPABASE_TABLE_NAME = "stock_optimisation_store"
 
 [SCREENSHOT 4.2]
   WHAT TO CAPTURE: Lines showing PORTFOLIO_TICKERS, RISK_AVERSION,
                    MINIMUM_ALLOCATION, and PROPHET_PARAMS
   FILE:            src/settings.py
-  LINES:           1–54 (or crop to lines 4–27 and 48–53)
+  LINES:           1–54
   CAPTION:         "Figure 4.2: Centralised system configuration in settings.py,
                    defining portfolio tickers and risk parameters."
 
@@ -506,24 +559,33 @@ Key configuration values implemented in the system:
 4.4 DATA EXTRACTION MODULE (extractor.py)
 
 The data extraction module retrieves historical stock prices from Yahoo Finance
-using the yfinance library. The function extract_data() iterates over the
-provided ticker list, downloads OHLCV data for each symbol, and returns a
-dictionary of processed DataFrames.
+using the yfinance library. The public function extract_data() iterates over the
+provided ticker list, downloads OHLCV data for each symbol over the configured
+date range, and returns a dictionary mapping ticker symbols to processed
+DataFrames.
 
-For each ticker, the helper function _process_ticker_dataframe() performs:
-  (a) extraction of the closing price column,
-  (b) renaming to "Price",
-  (c) calculation of daily returns using pandas pct_change(), and
-  (d) normalisation of the date index.
+For each ticker, the helper function _process_ticker_dataframe() performs four
+transformations:
 
-Error handling is implemented at the per-ticker level: if a symbol is invalid or
-unavailable, the error is logged and that ticker is skipped rather than causing
-the entire pipeline to fail.
+  (a) extraction of the closing price column and renaming to "Price";
+  (b) calculation of daily simple returns using pandas pct_change();
+  (c) removal of rows with missing values (first observation dropped); and
+  (d) normalisation of the DatetimeIndex to Python date objects.
+
+Error handling is implemented at the per-ticker level. If yfinance returns an
+empty DataFrame (e.g. due to rate limiting or temporary API failure), the
+ticker is logged as a warning and skipped rather than aborting the pipeline.
+This defensive design allows partial portfolio runs when some symbols fail to
+download, although the optimiser requires a non-empty intersection of aligned
+tickers to proceed. Invalid symbols and network exceptions are caught in
+_extract_single_ticker_data() and logged without terminating the full extraction
+loop.
 
 [SCREENSHOT 4.3]
-  WHAT TO CAPTURE: The extract_data() function and _process_ticker_dataframe()
+  WHAT TO CAPTURE: extract_data() and _process_ticker_dataframe() including
+                   empty-data guard before index normalisation
   FILE:            src/extractor.py
-  LINES:           13–34 and 66–89
+  LINES:           13–40 and 66–95
   CAPTION:         "Figure 4.3: Data extraction module downloading and
                    processing historical stock prices via yfinance."
 
@@ -532,19 +594,26 @@ the entire pipeline to fail.
 
 The preprocessing module aligns multiple ticker DataFrames to a common set of
 trading dates. The function preprocess_data() computes the set intersection of
-dates across all tickers and trims each DataFrame accordingly. This ensures that
-covariance estimation and portfolio optimisation operate on synchronised return
-series.
+index dates across all successfully downloaded tickers and trims each DataFrame
+to that shared calendar. This step is essential for covariance estimation: the
+sample covariance matrix Σ requires synchronised return observations across
+assets on identical trading days.
 
-Additional utility functions include:
-  - collect_recent_prices(): extracts the last 30 days of prices for dashboard
-    sparkline charts
-  - append_predictions(): extends historical data with a predicted next-day row
-    (retained for backward compatibility; the main pipeline now passes Prophet
-    returns directly to the optimiser)
+Two auxiliary functions support downstream consumers:
+
+  - collect_recent_prices(): extracts the trailing 30 calendar days of closing
+    prices per ticker. These series are serialised to Supabase as JSON arrays
+    in the actual_prices_last_month column and used by the dashboard for price
+    history sparklines and actual-vs-predicted comparison.
+
+  - append_predictions(): appends a synthetic next-day row containing predicted
+    price and return to each ticker's DataFrame. This function is retained for
+    backward compatibility and unit tests but is not invoked by the production
+    pipeline, which passes Prophet returns to the optimiser via the
+    expected_returns parameter instead.
 
 [SCREENSHOT 4.4]
-  WHAT TO CAPTURE: The preprocess_data() function showing date intersection logic
+  WHAT TO CAPTURE: preprocess_data() showing date-intersection logic
   FILE:            src/processor.py
   LINES:           11–39
   CAPTION:         "Figure 4.4: Data preprocessing module aligning stock
@@ -554,24 +623,40 @@ Additional utility functions include:
 4.6 PROPHET FORECASTING MODULE (model.py)
 
 The forecasting module implements the ProphetModel class, which fits an
-independent Prophet model for each ticker in the portfolio. The implementation
-incorporates US stock exchange holidays retrieved from the XNYS calendar via
-pandas_market_calendars, preventing forecasts on non-trading days.
+independent Prophet model for each ticker in the portfolio. Fitting one model
+per asset (rather than a multivariate model) keeps the implementation modular
+and allows per-ticker failure isolation, at the cost of ignoring cross-asset
+forecast dependencies.
 
-The predict_for_tickers() method:
-  1. Retrieves the current (last known) closing price for each ticker
-  2. Calls predict_next() to fit Prophet and generate a one-step-ahead forecast
-  3. Computes the predicted daily return as (predicted_price - current_price) / current_price
-  4. Returns two dictionaries: predictions (prices) and predicted_returns (returns)
+4.6.1 Holiday and Seasonality Configuration
 
-Prophet is configured with yearly seasonality enabled, weekly seasonality
-enabled, and daily seasonality disabled, as defined in PROPHET_PARAMS within
-settings.py.
+US stock exchange holidays are retrieved from the XNYS calendar via
+pandas_market_calendars and passed to Prophet's holidays argument. This prevents
+the model from treating exchange closures as missing observations and improves
+weekly seasonality estimation. Prophet hyperparameters are loaded from
+PROPHET_PARAMS in settings.py: yearly and weekly seasonality enabled, daily
+seasonality disabled (appropriate for daily closing prices).
+
+4.6.2 One-Step-Ahead Forecasting
+
+The method predict_for_tickers() executes the following for each ticker:
+
+  1. Read the last known closing price from the aligned historical DataFrame.
+  2. Call predict_next(), which fits Prophet on the full price series and
+     forecasts the next calendar day via model.predict().
+  3. Compute the predicted simple return:
+       r̂ᵢ = (ŷᵢ − Pᵢ,₀) / Pᵢ,₀
+     where ŷᵢ is Prophet's point forecast and Pᵢ,₀ is the latest close.
+  4. Accumulate results into two dictionaries: predictions (prices) and
+     predicted_returns (returns).
+
+The function returns both dictionaries as a tuple, enabling downstream modules
+to use price levels for logging and return forecasts for optimisation.
 
 [SCREENSHOT 4.5]
-  WHAT TO CAPTURE: ProphetModel class — predict_for_tickers() and predict_next()
+  WHAT TO CAPTURE: ProphetModel — predict_for_tickers() and predict_next()
   FILE:            src/model.py
-  LINES:           91–141 (fit method) and 169–204 (predict_for_tickers)
+  LINES:           91–141 (fit) and 169–204 (predict_for_tickers)
   CAPTION:         "Figure 4.5: Prophet forecasting module implementing
                    one-step-ahead price prediction per ticker."
 
@@ -579,28 +664,45 @@ settings.py.
 4.7 PORTFOLIO OPTIMISATION MODULE (optimiser.py)
 
 The optimisation module implements Markowitz mean-variance portfolio optimisation
-using the Sequential Least Squares Programming (SLSQP) solver from SciPy.
+using the Sequential Least Squares Programming (SLSQP) solver from SciPy's
+optimize.minimize interface.
 
-The function calculate_mean_variance() constructs:
-  - μ (expected returns): from Prophet's predicted_returns when provided, otherwise
-    from historical mean returns
-  - Σ (covariance matrix): always computed from the last 252 trading days of
-    historical returns
+4.7.1 Expected Returns and Covariance Construction
 
-The objective function minimised is:
+The function calculate_mean_variance() constructs the inputs to the solver:
 
-  f(w) = -(wᵀμ - λ/2 · wᵀΣw)
+  - μ (expected returns): when the optional parameter expected_returns is
+    supplied (as in production), μ is set directly from Prophet's
+    predicted_returns dictionary with no averaging or blending with historical
+    means. When expected_returns is None, μ falls back to the sample mean of
+    historical returns (backward-compatible behaviour for tests).
+
+  - Σ (covariance matrix): always computed from the last 252 trading days
+    (approximately one year) of historical daily returns in the aligned
+    portfolio_data. Forecast rows are never appended to this data in the
+    production path, preventing contamination of risk estimates by predicted
+    values.
+
+4.7.2 Optimisation Problem
+
+The objective function minimised is the negative of the mean-variance utility:
+
+  f(w) = -(wᵀμ − λ/2 · wᵀΣw)
 
 Subject to:
   - Equality constraint: Σwᵢ = 1 (fully invested portfolio)
-  - Bound constraints: 0.05 ≤ wᵢ ≤ 1.0 per asset
-  - No short selling (enforced by lower bound ≥ 0)
+  - Bound constraints: 0.05 ≤ wᵢ ≤ 1.0 per asset (MINIMUM_ALLOCATION)
+  - No short selling (enforced by the lower bound)
+
+The solver is initialised with equal weights and converges via SLSQP. The
+optimal weight vector is returned as a dictionary mapping ticker symbol to
+allocation proportion.
 
 [SCREENSHOT 4.6]
-  WHAT TO CAPTURE: optimize_portfolio_mean_variance() including objective
-                   function, constraints, and SLSQP solver call
+  WHAT TO CAPTURE: optimize_portfolio_mean_variance() — objective, constraints,
+                   expected_returns branch in calculate_mean_variance()
   FILE:            src/optimiser.py
-  LINES:           76–132
+  LINES:           27–73 and 76–132
   CAPTION:         "Figure 4.6: Mean-variance portfolio optimisation using
                    SciPy SLSQP with Prophet expected returns."
 
@@ -608,22 +710,48 @@ Subject to:
 4.8 PIPELINE ORCHESTRATION (main.py)
 
 The function run_optimisation() serves as the central orchestrator, executing
-the complete pipeline in sequence:
+the complete end-to-end pipeline in a fixed sequence. Table 4.2 maps each step
+to its implementing module and output.
 
-  Step 1 — extract_data(): download historical prices
-  Step 2 — preprocess_data(): align dates and compute returns
-  Step 3 — ProphetModel().predict_for_tickers(): generate forecasts
-  Step 4 — collect_recent_prices(): gather recent price history
-  Step 5 — optimize_portfolio_mean_variance(): compute optimal weights,
-           passing predicted_returns as the expected return vector
-  Step 6 — return structured result dictionary
+Table 4.2: Production Pipeline Steps
 
-The CLI entry point main() calls run_optimisation() with the default ticker
-list from settings.py and persists results to Supabase via
-save_results_to_supabase().
+| Step | Function / Class                    | Input              | Output                    |
+|------|-------------------------------------|--------------------|---------------------------|
+| 1    | extract_data()                      | tickers, dates     | raw price/return dict     |
+| 2    | preprocess_data()                 | raw dict           | date-aligned dict         |
+| 3    | ProphetModel.predict_for_tickers()  | aligned dict       | prices + predicted_returns|
+| 4    | collect_recent_prices()             | aligned dict       | 30-day price history      |
+| 5    | optimize_portfolio_mean_variance()  | aligned dict, μ    | optimal weights dict      |
+| 6    | return result dict                  | all above          | structured JSON-like dict |
+
+The critical integration between forecasting and optimisation occurs at Step 5:
+
+  weights_dict = optimize_portfolio_mean_variance(
+      portfolio_data,
+      expected_returns=predicted_returns,
+  )
+
+Here portfolio_data contains only historical rows (Step 2 output), while
+predicted_returns from Step 3 becomes μ. This wiring was verified by integration
+tests (Section 4.14).
+
+4.8.1 Command-Line Interface
+
+The CLI entry point main() invokes run_optimisation() with PORTFOLIO_TICKERS
+from settings.py and persists results via save_results_to_supabase(). When
+invoked without arguments:
+
+  poetry run python -m src.main
+
+this executes the default optimise-and-save workflow unchanged.
+
+Optional analysis commands are dispatched through src/analysis_cli.py when
+provided as the first argument (backtest, risk, sector, analyze). These
+commands extend the platform without altering the default production path.
 
 [SCREENSHOT 4.7]
-  WHAT TO CAPTURE: The full run_optimisation() function showing all six steps
+  WHAT TO CAPTURE: run_optimisation() showing all pipeline steps and the
+                   expected_returns=predicted_returns optimiser call
   FILE:            src/main.py
   LINES:           23–99
   CAPTION:         "Figure 4.7: Pipeline orchestration in run_optimisation()
@@ -632,138 +760,251 @@ save_results_to_supabase().
 
 4.9 DATABASE MODULE (database.py)
 
-Results are persisted to a Supabase-managed PostgreSQL database. The function
-save_results_to_supabase() creates one database row per ticker for each
-optimisation run, storing:
+Results are persisted to a Supabase-managed PostgreSQL database. Supabase
+credentials (SUPABASE_URL and SUPABASE_KEY) are read from environment
+variables at runtime, ensuring no API keys are hardcoded in source files.
+The same variables are injected into GitHub Actions via repository secrets for
+scheduled production runs.
 
-  - as_of_date: the date the optimisation was run
-  - ticker: stock symbol
-  - predicted_price: Prophet's next-day price forecast
-  - predicted_return: computed expected return
-  - portfolio_weight: optimal allocation from the optimiser
-  - actual_prices_last_month: JSON array of recent closing prices
+4.9.1 Schema and Row Structure
 
-Database credentials (SUPABASE_URL and SUPABASE_KEY) are loaded from environment
-variables, ensuring credentials are not hardcoded in source files.
+The function save_results_to_supabase() inserts one row per ticker per
+optimisation run into the table stock_optimisation_store. Each row contains:
+
+| Column                     | Type        | Description                              |
+|----------------------------|-------------|------------------------------------------|
+| id                         | UUID        | Unique row identifier (uuid4)            |
+| created_at                 | TIMESTAMPTZ | Insertion timestamp                      |
+| as_of_date                 | DATE        | Date the optimisation was run            |
+| ticker                     | TEXT        | Stock symbol                             |
+| predicted_price            | FLOAT       | Prophet next-day price forecast (ŷ)      |
+| predicted_return           | FLOAT       | Computed expected simple return          |
+| portfolio_weight           | FLOAT       | Optimal MPT allocation weight            |
+| actual_prices_last_month   | JSONB       | Array of ~30 recent closing prices       |
+
+The actual_prices_last_month field stores a JSON-encoded list of floats (e.g.
+[315.20, 310.26, ...]) rather than a single scalar, enabling the dashboard to
+render trailing price charts without re-downloading history from Yahoo Finance.
 
 [SCREENSHOT 4.8]
-  WHAT TO CAPTURE: save_results_to_supabase() showing row construction and insert
+  WHAT TO CAPTURE: save_results_to_supabase() — row construction and insert
   FILE:            src/database.py
-  LINES:           36–79
+  LINES:           36–81
   CAPTION:         "Figure 4.8: Database persistence layer saving optimisation
                    results to Supabase PostgreSQL."
 
 
-4.10 STREAMLIT DASHBOARD (streamlit_app.py)
+4.10 STREAMLIT DASHBOARD (streamlit_app.py and dashboard.py)
 
 The presentation layer is implemented as an interactive Streamlit web
-application. The dashboard loads historical optimisation results from Supabase
-and provides:
+application. A thin root-level launcher (dashboard.py) imports and calls
+main() from streamlit_app.py, providing a conventional entry point for
+deployment and the Makefile target make dashboard.
 
-  - Portfolio weight visualisation (pie/bar charts)
-  - Forecast accuracy metrics (MAPE, RMSE, MAE) per ticker
-  - Portfolio-level Sharpe ratio and volatility (weighted by optimal allocations)
-  - Cumulative return charts comparing predicted vs actual performance
-  - Correlation matrix and efficient frontier visualisation
+4.10.1 Data Loading
 
-The function calculate_portfolio_metrics() computes risk-adjusted performance
-using weight-weighted returns when portfolio_weight and return columns are
-available in the performance DataFrame.
+The function load_supabase_predictions() queries stock_optimisation_store,
+orders rows by as_of_date and created_at, deduplicates to one row per
+(ticker, date), and returns a pandas DataFrame. If Supabase is unavailable or
+empty, the dashboard falls back to generate_mock_portfolio_data() from
+mock_data.py for demonstration purposes.
+
+4.10.2 Dashboard Tabs
+
+The interface is organised into five tabs:
+
+  1. Overview — portfolio allocation pie chart, summary table of predicted
+     prices, returns, and weights for the selected as-of date.
+  2. Prediction Accuracy — per-ticker error metrics, heatmaps, and cumulative
+     return charts comparing predicted vs actual prices over time.
+  3. Advanced Analytics — prediction error heatmap and cross-ticker error
+     correlation matrix.
+  4. Performance Metrics — portfolio-level MAPE, RMSE, Sharpe ratio, volatility,
+     and an on-demand "Compute advanced risk & sector metrics" panel that
+     invokes RiskAnalyzer and SectorAnalyzer via portfolio_analysis.py.
+  5. Efficient Frontier — interactive risk-return frontier exploration using
+     the EfficientFrontier class.
+
+The function calculate_portfolio_metrics() computes weight-adjusted portfolio
+returns when portfolio_weight, actual_return, and predicted_return columns are
+present, ensuring performance statistics reflect the optimised allocation rather
+than equal-weighted averages.
 
 [SCREENSHOT 4.9]
-  WHAT TO CAPTURE: Either (a) code showing calculate_portfolio_metrics() in
-                   streamlit_app.py lines 79–95, OR (b) a browser screenshot of
-                   the running Streamlit dashboard showing portfolio weights chart
-  FILE:            src/streamlit_app.py (code) OR browser (UI)
-  LINES:           79–95 (if code screenshot)
+  WHAT TO CAPTURE: (a) calculate_portfolio_metrics() in streamlit_app.py, OR
+                   (b) browser screenshot of the running dashboard Overview tab
+  FILE:            src/streamlit_app.py OR browser
+  LINES:           79–120 (if code screenshot)
   CAPTION:         "Figure 4.9: Streamlit dashboard computing portfolio-level
                    metrics from weighted returns."
 
 
-4.11 BACKTESTING IMPLEMENTATION (backtesting.py)
+4.11 ADVANCED ANALYSIS MODULES
 
-The backtesting framework implements walk-forward validation as described in
-Section 3.8.2 of the methodology. The Backtester class:
+Beyond the core production pipeline, four modules provide supplementary
+analysis capabilities. These were integrated into the workflow via
+src/portfolio_analysis.py (shared helpers) and src/analysis_cli.py (CLI
+dispatch), without modifying the default optimise path.
 
-  1. Defines a rolling training window (default: 252 trading days)
-  2. For each test date, calls run_optimisation() with history up to that date
-  3. Compares Prophet's predicted prices against actual next-day prices
-  4. Computes per-date metrics: price MAPE, return MAPE, portfolio returns
-  5. Aggregates results into a BacktestSummary with Sharpe ratio and volatility
+4.11.1 Backtesting (backtesting.py)
+
+The Backtester class implements walk-forward validation as described in the
+methodology (Chapter Three, Section 3.8.2):
+
+  1. Define a rolling training window (default: 252 trading days).
+  2. For each test date (sampled every 5 business days), call run_optimisation()
+     with history up to that date — inheriting the full Prophet → MPT pipeline.
+  3. Compare predicted prices and returns against actual next-day observations.
+  4. Compute per-date metrics: price MAPE, return MAPE, portfolio predicted and
+     actual returns.
+  5. Aggregate into a BacktestSummary with Sharpe ratio, volatility, max
+     drawdown, and strategy outperformance.
+
+CLI invocation: poetry run python -m src.main backtest [--start DATE] [--output FILE]
+
+4.11.2 Risk Analytics (risk_analytics.py)
+
+The RiskAnalyzer class computes portfolio and per-ticker risk metrics through
+the RiskMetrics dataclass:
+
+  - Value at Risk (VaR) at 95% and 99% confidence
+  - Conditional Value at Risk (CVaR / Expected Shortfall)
+  - Sharpe Ratio and Sortino Ratio (annualised)
+  - Maximum Drawdown and Calmar Ratio
+  - Volatility, skewness, kurtosis
+  - Portfolio concentration (Herfindahl index, effective number of assets)
+
+CLI invocation: poetry run python -m src.main risk
+
+4.11.3 Sector Analysis (sector_analysis.py)
+
+The SectorAnalyzer class maps tickers to GICS-style sectors via TICKER_SECTOR_MAP,
+computes sector weights, Herfindahl-Hirschman concentration, and per-sector
+volatility and expected-return contributions. This supports diversification
+analysis beyond individual-asset weights.
+
+CLI invocation: poetry run python -m src.main sector
+
+4.11.4 Portfolio Analysis Bridge (portfolio_analysis.py)
+
+This module provides shared functions used by both the CLI and the Streamlit
+dashboard: loading aligned returns data, computing weighted portfolio return
+series, formatting backtest summaries, and serialising sector analysis results
+for tabular display.
+
+Makefile targets: make backtest, make risk, make sector, make analyze
 
 [SCREENSHOT 4.10]
   WHAT TO CAPTURE: Backtester.run() walk-forward loop calling run_optimisation()
   FILE:            src/backtesting.py
-  LINES:           169–226
+  LINES:           126–235
   CAPTION:         "Figure 4.10: Walk-forward backtesting implementation
                    validating forecasting accuracy on historical dates."
 
-
-4.12 RISK ANALYTICS IMPLEMENTATION (risk_analytics.py)
-
-The risk analytics module computes a comprehensive set of risk metrics through
-the RiskMetrics dataclass, including:
-
-  - Value at Risk (VaR) at 95% and 99% confidence levels
-  - Conditional Value at Risk (CVaR / Expected Shortfall)
-  - Sharpe Ratio and Sortino Ratio (annualised)
-  - Maximum Drawdown and Calmar Ratio
-  - Volatility, skewness, kurtosis, beta, and Jensen's alpha
-
-These metrics complement the optimisation output by quantifying downside risk
-exposure and risk-adjusted performance.
-
 [SCREENSHOT 4.11]
-  WHAT TO CAPTURE: RiskMetrics dataclass definition showing all metric fields
+  WHAT TO CAPTURE: RiskMetrics dataclass and calculate_portfolio_metrics()
   FILE:            src/risk_analytics.py
-  LINES:           13–47
+  LINES:           13–47 and 216–249
   CAPTION:         "Figure 4.11: Risk analytics module defining portfolio
                    risk metrics including VaR, CVaR, and Sharpe ratio."
 
 
+4.12 MONITORING AND DEPLOYMENT SUPPORT
+
+Additional modules support production operations:
+
+  - monitoring.py — JobLogger and JobHistoryManager for tracking optimisation
+    run lifecycle (pending, running, success, failed).
+  - alerts.py — multi-channel alert dispatch (email, Slack, log file) on job
+    failure or degraded performance.
+  - deployment.py — health checks, systemd service templates, and pre-deployment
+    validation checklists.
+  - streamlit_admin.py — separate admin dashboard for job history and system
+    health (distinct from the investor-facing forecast dashboard).
+
+These modules were implemented in Phase 4 of development and are tested in
+tests/test_phase4.py.
+
+
 4.13 TESTING IMPLEMENTATION
 
-The system includes a comprehensive test suite under tests/ covering:
+The system includes a comprehensive test suite under tests/ with 16 test modules
+covering unit, integration, edge-case, and dashboard behaviour. Tests are
+executed via pytest with coverage reporting configured in pytest.ini and
+.coveragerc.
 
-  - Unit tests: individual module functions (test_extractor.py, test_model.py,
-    test_optimiser.py, test_processor.py, test_database.py)
-  - Integration tests: full pipeline validation (test_integration.py)
-  - Edge cases: error handling and boundary conditions (test_edge_cases.py)
-  - Dashboard tests: Streamlit metric calculations (test_streamlit_app.py)
-  - Backtesting tests: walk-forward result validation (test_backtesting.py)
+Table 4.3: Test Module Coverage
 
-A key integration test verifies that run_optimisation() passes Prophet's
-predicted_returns to the optimiser as the expected_returns parameter, ensuring
-consistency between the forecasting and optimisation pipeline stages.
+| Test File                  | Scope                                           |
+|----------------------------|-------------------------------------------------|
+| test_extractor.py          | yfinance download and return calculation        |
+| test_processor.py          | Date alignment and recent-price collection      |
+| test_model.py              | Prophet fit, predict, holiday handling          |
+| test_optimiser.py          | μ/Σ construction, SLSQP, expected_returns path  |
+| test_database.py           | Supabase client and row insertion               |
+| test_integration.py        | Full pipeline and Prophet→MPT wiring            |
+| test_edge_cases.py         | Empty data, NaN, boundary conditions            |
+| test_backtesting.py        | Walk-forward metrics and BacktestSummary          |
+| test_risk_analytics.py     | VaR, CVaR, Sharpe, concentration                |
+| test_sector_analysis.py    | Sector weights, HHI, portfolio sector analysis    |
+| test_streamlit_app.py      | Dashboard metric and chart helper functions       |
+| test_efficient_frontier.py | Frontier generation and portfolio metrics         |
+| test_portfolio_analysis.py | Shared analysis helpers and weighted returns      |
+| test_analysis_cli.py       | CLI dispatch for backtest/risk/sector commands    |
+| test_phase4.py             | Monitoring, alerts, deployment utilities        |
+
+A key integration test, test_run_optimisation_passes_prophet_returns_to_optimiser,
+mocks the optimiser and asserts that run_optimisation() passes
+expected_returns equal to Prophet's predicted_returns dictionary. A companion
+unit test in test_optimiser.py verifies that weights change when μ is shifted
+while Σ is held constant, confirming behavioural sensitivity to forecasts.
 
 [SCREENSHOT 4.12]
   WHAT TO CAPTURE: test_run_optimisation_passes_prophet_returns_to_optimiser()
-                   in test_integration.py
   FILE:            tests/test_integration.py
-  LINES:           50–68
+  LINES:           50–69
   CAPTION:         "Figure 4.12: Integration test verifying Prophet returns
                    are passed as MPT expected returns to the optimiser."
 
 [SCREENSHOT 4.13]
-  WHAT TO CAPTURE: Terminal output of pytest run showing all tests passing
-  COMMAND:         cd project && pytest tests/ -v
+  WHAT TO CAPTURE: Terminal output of pytest showing tests passing
+  COMMAND:         poetry run pytest tests/ -v
   CAPTION:         "Figure 4.13: Test suite execution confirming system
                    correctness across all modules."
 
 
 4.14 DEPLOYMENT
 
-The completed system is deployed on a Virtual Private Server (VPS) with:
+The completed system is deployed with the following automation and infrastructure
+components:
 
-  - Daily automated optimisation via GitHub Actions
-    (.github/workflows/daily-optimisation.yml)
-  - Deployment script (scripts/deploy.sh) for VPS setup
-  - Environment variables for Supabase credentials on the server
-  - Optional Streamlit dashboard hosting for result visualisation
+4.14.1 Scheduled Optimisation (GitHub Actions)
+
+The workflow .github/workflows/daily-optimisation.yml runs at 09:00 UTC daily
+(and supports manual workflow_dispatch). It checks out the repository, installs
+dependencies via Poetry, sets SUPABASE_URL and SUPABASE_KEY from GitHub secrets,
+and executes poetry run python -m src.main. This provides unattended daily
+forecasting, optimisation, and database persistence.
+
+4.14.2 VPS Hosting
+
+A deployment script (scripts/deploy.sh) pulls the latest code on a Hostinger VPS,
+installs dependencies if pyproject.toml changed, and restarts the Streamlit
+systemd service. The investor dashboard is accessible via the project domain;
+the admin dashboard (streamlit_admin.py) provides operational monitoring.
+
+4.14.3 Environment Configuration
+
+Production and local environments require:
+
+  SUPABASE_URL   — Supabase project REST endpoint
+  SUPABASE_KEY   — Supabase anon/public API key
+
+These are never committed to the repository. Local runs use export or a sourced
+.env file; CI uses GitHub Actions secrets.
 
 [SCREENSHOT 4.14]
-  WHAT TO CAPTURE: .github/workflows/daily-optimisation.yml showing the
-                   scheduled cron job
+  WHAT TO CAPTURE: daily-optimisation.yml showing cron schedule and env secrets
   FILE:            .github/workflows/daily-optimisation.yml
   CAPTION:         "Figure 4.14: Automated daily portfolio optimisation
                    scheduled via GitHub Actions."
@@ -771,29 +1012,40 @@ The completed system is deployed on a Virtual Private Server (VPS) with:
 
 4.15 IMPLEMENTATION SUMMARY
 
-Table 4.1 summarises the mapping between system requirements and their
+Table 4.4 summarises the mapping between system requirements and their
 implemented modules.
 
-Table 4.1: Module Implementation Summary
+Table 4.4: Module Implementation Summary
 
-| Requirement              | Module File          | Key Function / Class              |
-|--------------------------|----------------------|-----------------------------------|
-| Data acquisition         | extractor.py         | extract_data()                    |
-| Data preprocessing       | processor.py         | preprocess_data()                 |
-| Price forecasting        | model.py             | ProphetModel.predict_for_tickers()|
-| Portfolio optimisation   | optimiser.py         | optimize_portfolio_mean_variance()|
-| Pipeline orchestration   | main.py              | run_optimisation()                |
-| Result persistence       | database.py          | save_results_to_supabase()        |
-| Dashboard visualisation  | streamlit_app.py     | Streamlit UI + metric functions   |
-| Risk assessment          | risk_analytics.py    | RiskMetrics                       |
-| Performance validation   | backtesting.py       | Backtester.run()                  |
-| Configuration            | settings.py          | PORTFOLIO_TICKERS, RISK_AVERSION  |
+| Requirement              | Module File              | Key Function / Class              |
+|--------------------------|--------------------------|-----------------------------------|
+| Data acquisition         | extractor.py             | extract_data()                    |
+| Data preprocessing       | processor.py             | preprocess_data()                 |
+| Price forecasting        | model.py                 | ProphetModel.predict_for_tickers()|
+| Portfolio optimisation   | optimiser.py             | optimize_portfolio_mean_variance()|
+| Pipeline orchestration   | main.py                  | run_optimisation()                |
+| Result persistence       | database.py              | save_results_to_supabase()        |
+| Dashboard visualisation  | streamlit_app.py         | run_dashboard()                   |
+| Dashboard entry point    | dashboard.py             | main()                            |
+| Risk assessment          | risk_analytics.py        | RiskAnalyzer, RiskMetrics         |
+| Sector analysis          | sector_analysis.py       | SectorAnalyzer                    |
+| Performance validation   | backtesting.py           | Backtester.run()                  |
+| Analysis CLI             | analysis_cli.py          | dispatch(), backtest/risk/sector  |
+| Analysis bridge          | portfolio_analysis.py    | analyze_portfolio_risk()          |
+| Efficient frontier       | efficient_frontier.py    | EfficientFrontier                 |
+| Job monitoring           | monitoring.py            | JobLogger                         |
+| Alerting                 | alerts.py                | AlertManager                      |
+| Configuration            | settings.py              | PORTFOLIO_TICKERS, RISK_AVERSION  |
 
 The modular implementation ensures that each component can be tested, modified,
-and extended independently. The integration through run_optimisation() provides
-a single entry point for both CLI execution and backtesting, while the Streamlit
-dashboard and Supabase persistence layer deliver end-to-end usability for
-investment analysis and historical performance tracking.
+and extended independently. The production path — extract, forecast, optimise,
+persist, visualise — is orchestrated through run_optimisation() and invoked
+daily via GitHub Actions. Prophet predicted returns drive the expected return
+vector μ in the optimiser, while historical returns alone define covariance Σ,
+realising the methodological design of Chapter Three in working software.
+Supplementary analysis commands (backtest, risk, sector) and the Streamlit
+dashboard provide end-to-end usability for investment analysis, risk reporting,
+and historical performance tracking.
 
 
 ================================================================================
@@ -804,18 +1056,20 @@ Use this checklist when inserting screenshots into Word:
 
   [ ] Figure 4.1  — Project folder tree (file explorer)
   [ ] Figure 4.2  — src/settings.py (tickers + risk params)
-  [ ] Figure 4.3  — src/extractor.py (extract_data)
+  [ ] Figure 4.3  — src/extractor.py (extract_data + empty-data handling)
   [ ] Figure 4.4  — src/processor.py (preprocess_data)
   [ ] Figure 4.5  — src/model.py (ProphetModel)
-  [ ] Figure 4.6  — src/optimiser.py (SLSQP optimisation)
-  [ ] Figure 4.7  — src/main.py (run_optimisation pipeline)
-  [ ] Figure 4.8  — src/database.py (Supabase save)
+  [ ] Figure 4.6  — src/optimiser.py (SLSQP + expected_returns)
+  [ ] Figure 4.7  — src/main.py (run_optimisation + expected_returns call)
+  [ ] Figure 4.8  — src/database.py (Supabase save + schema fields)
   [ ] Figure 4.9  — streamlit_app.py OR running dashboard UI
   [ ] Figure 4.10 — src/backtesting.py (walk-forward loop)
   [ ] Figure 4.11 — src/risk_analytics.py (RiskMetrics)
   [ ] Figure 4.12 — tests/test_integration.py (integration test)
-  [ ] Figure 4.13 — pytest terminal output (all passing)
+  [ ] Figure 4.13 — pytest terminal output (tests passing)
   [ ] Figure 4.14 — .github/workflows/daily-optimisation.yml
+  [ ] Figure 4.15 — (optional) Supabase Table Editor showing saved rows
+  [ ] Figure 4.16 — (optional) Terminal output of poetry run python -m src.main
 
 For Chapter 3 diagrams:
 
