@@ -9,6 +9,8 @@ import pandas as pd
 import pandas_market_calendars as mcal
 from prophet import Prophet
 
+from src.market_calendar import next_trading_day
+
 from .settings import HOLIDAY_NAME_MAP, PROPHET_PARAMS
 
 logger = logging.getLogger(__name__)
@@ -155,9 +157,11 @@ class ProphetModel:
 
         # Get the last date from the series
         last_date = price_series.index[-1]
+        if not isinstance(last_date, date):
+            last_date = pd.Timestamp(last_date).date()
 
-        # Create future dataframe with next day
-        future = pd.DataFrame({"ds": pd.date_range(start=last_date, periods=2, freq="D")[1:]})
+        target_day = next_trading_day(last_date)
+        future = pd.DataFrame({"ds": [pd.Timestamp(target_day)]})
 
         # Make prediction
         if self.model is None:

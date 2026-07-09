@@ -9,7 +9,7 @@ on:
 jobs:
   optimise:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -37,8 +37,16 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction
 
+      - name: Score previous prediction outcomes
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: poetry run python -m src.main score-outcomes
+
       - name: Run portfolio optimisation and save to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: poetry run python -m src.main
+        # score_previous handled in dedicated step above to keep soft-fail separation
+        run: poetry run python -c "from src.main import main; main(score_previous=False)"

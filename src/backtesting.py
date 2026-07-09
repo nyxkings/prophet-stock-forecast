@@ -83,6 +83,14 @@ class BacktestSummary:
     # Per-ticker metrics
     ticker_mape: dict[str, float] = field(default_factory=dict)
 
+    # Optional benchmark comparisons (additive; None if unavailable)
+    benchmark_equal_weight_return: float | None = None
+    benchmark_buy_hold_equal_weight_return: float | None = None
+    benchmark_spy_return: float | None = None
+    excess_return_vs_equal_weight: float | None = None
+    excess_return_vs_buy_hold_equal_weight: float | None = None
+    excess_return_vs_spy: float | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -108,6 +116,12 @@ class BacktestSummary:
             "portfolio_volatility": self.portfolio_volatility,
             "portfolio_max_drawdown": self.portfolio_max_drawdown,
             "ticker_mape": self.ticker_mape,
+            "benchmark_equal_weight_return": self.benchmark_equal_weight_return,
+            "benchmark_buy_hold_equal_weight_return": self.benchmark_buy_hold_equal_weight_return,
+            "benchmark_spy_return": self.benchmark_spy_return,
+            "excess_return_vs_equal_weight": self.excess_return_vs_equal_weight,
+            "excess_return_vs_buy_hold_equal_weight": self.excess_return_vs_buy_hold_equal_weight,
+            "excess_return_vs_spy": self.excess_return_vs_spy,
         }
 
 
@@ -231,8 +245,75 @@ class Backtester:
             except Exception:
                 continue
 
-        # Generate summary
-        return self._generate_summary(start_date, end_date, num_trades)
+        # Generate summary (includes optional benchmarks)
+        return self._generate_summary(
+            start_date,
+            end_date,
+            num_trades,
+            include_benchmarks=True,
+        )
+
+    def _equal_weight_period_returns(self) -> list[float]:
+        """Equal-weight portfolio returns for each evaluated backtest date."""
+        n = len(self.tickers)
+        if n == 0:
+            return []
+        weight = 1.0 / n
+        return [
+            sum(weight * result.actual_returns.get(ticker, 0.0) for ticker in self.tickers)
+            for result in self.results
+        ]
+
+    def _buy_hold_equal_weight_return(self) -> float | None:
+        """
+        Cumulative buy-and-hold equal-weight return from first to last evaluated date.
+
+        Uses equal-weight across tickers on the first sample's start prices implied by
+        actual returns chain reconstruction where possible; falls back to cumulative
+        product of equal-weight period returns (same as rebalanced) when chain fails.
+        """
+        period_returns = self._equal_weight_period_returns()
+        if not period_returns:
+            return None
+        # Approximate buy-and-hold as cumulative product of average asset returns
+        # reconstructed per ticker over the sample dates, then equal-weight those.
+        per_ticker_cum: list[float] = []
+        for ticker in self.tickers:
+            series = [r.actual_returns.get(ticker) for r in self.results]
+            if any(value is None for value in series):
+                continue
+            path = 1.0
+            for value in series:
+                path *= 1.0 + float(value)  # type: ignore[arg-type]
+            per_ticker_cum.append(path - 1.0)
+        if not per_ticker_cum:
+            return float(np.prod([1.0 + r for r in period_returns]) - 1.0)
+        return float(np.mean(per_ticker_cum))
+
+    def _spy_buy_hold_return(self, start_date: str, end_date: str) -> float | None:
+        """Cumulative SPY buy-and-hold return over the backtest window (soft-fail)."""
+        try:
+            import yfinance as yf
+
+            frame = yf.download(
+                "SPY",
+                start=start_date,
+                end=end_date,
+                progress=False,
+                auto_adjust=True,
+            )
+            if frame is None or frame.empty or "Close" not in frame.columns:
+                return None
+            closes = frame["Close"].dropna()
+            if len(closes) < 2:
+                return None
+            start_price = float(closes.iloc[0])
+            end_price = float(closes.iloc[-1])
+            if start_price == 0:
+                return None
+            return (end_price - start_price) / start_price
+        except Exception:
+            return None
 
     def _calculate_result(
         self,
@@ -299,6 +380,7 @@ class Backtester:
         start_date: str,
         end_date: str,
         num_trades: int,
+        include_benchmarks: bool = False,
     ) -> BacktestSummary:
         """Generate backtest summary from results."""
         if not self.results:
@@ -354,6 +436,29 @@ class Backtester:
             if ticker_errors:
                 ticker_mape[ticker] = float(np.mean(ticker_errors))
 
+        cumulative_actual = (
+            float(np.prod([1 + r for r in actual_returns]) - 1) if actual_returns else 0.0
+        )
+
+        bench_eq: float | None = None
+        bench_bh: float | None = None
+        bench_spy: float | None = None
+        excess_eq: float | None = None
+        excess_bh: float | None = None
+        excess_spy: float | None = None
+
+        if include_benchmarks and self.results:
+            eq_returns = self._equal_weight_period_returns()
+            if eq_returns:
+                bench_eq = float(np.prod([1.0 + r for r in eq_returns]) - 1.0)
+                excess_eq = cumulative_actual - bench_eq
+            bench_bh = self._buy_hold_equal_weight_return()
+            if bench_bh is not None:
+                excess_bh = cumulative_actual - bench_bh
+            bench_spy = self._spy_buy_hold_return(start_date, end_date)
+            if bench_spy is not None:
+                excess_spy = cumulative_actual - bench_spy
+
         return BacktestSummary(
             start_date=start_date,
             end_date=end_date,
@@ -371,9 +476,7 @@ class Backtester:
             cumulative_predicted_return=float(np.prod([1 + r for r in predicted_returns]) - 1)
             if predicted_returns
             else 0.0,
-            cumulative_actual_return=float(np.prod([1 + r for r in actual_returns]) - 1)
-            if actual_returns
-            else 0.0,
+            cumulative_actual_return=cumulative_actual,
             strategy_outperformance=float(
                 np.prod([1 + r for r in actual_returns])
                 / np.prod([1 + r for r in predicted_returns])
@@ -391,6 +494,12 @@ class Backtester:
             else 0.0,
             portfolio_max_drawdown=max_drawdown,
             ticker_mape=ticker_mape,
+            benchmark_equal_weight_return=bench_eq,
+            benchmark_buy_hold_equal_weight_return=bench_bh,
+            benchmark_spy_return=bench_spy,
+            excess_return_vs_equal_weight=excess_eq,
+            excess_return_vs_buy_hold_equal_weight=excess_bh,
+            excess_return_vs_spy=excess_spy,
         )
 
     def results_to_dataframe(self) -> pd.DataFrame:

@@ -1,0 +1,367 @@
+================================================================================
+PROJECT FORMULAS — Prophet Forecasting for Portfolio Optimisation
+================================================================================
+All formulas used in this project, grouped by subject, with source module(s).
+Notation: R_i = daily simple return of asset i; w_i = portfolio weight of asset i;
+μ_i = expected return of asset i; Σ = covariance matrix; N = 252 trading days/year.
+
+================================================================================
+1. DATA INGESTION & PREPROCESSING
+================================================================================
+
+Subject: Daily simple return from adjusted close prices
+  Formula:  R_t = (P_t - P_{t-1}) / P_{t-1}
+  Code:      pandas Series.pct_change() on the "Price" column
+  Module:    src/extractor.py
+
+Subject: Historical mean return (fallback μ when Prophet returns are not used)
+  Formula:  μ_i = (1/T) Σ_{t=1}^{T} R_{i,t}
+  Code:      returns_df.mean()
+  Module:    src/optimiser.py  (calculate_mean_variance, when expected_returns=None)
+
+Subject: Sample covariance matrix of asset returns (Σ)
+  Formula:  Σ_{ij} = Cov(R_i, R_j)  over the aligned return series
+  Code:      returns_df.cov()  on last 252 trading days by default
+  Module:    src/optimiser.py  (calculate_mean_variance)
+  Note:      Σ is always from historical returns, even when μ comes from Prophet.
+
+Subject: Pearson correlation between assets
+  Formula:  ρ_{ij} = Cov(R_i, R_j) / (σ_i σ_j)
+  Code:      pd.DataFrame(returns_dict).corr()
+  Module:    src/risk_analytics.py  (calculate_correlation_matrix)
+
+Subject: Average pairwise correlation (summary statistic)
+  Formula:  ρ̄ = mean of upper-triangle elements of correlation matrix (k=1)
+  Module:    src/risk_analytics.py
+
+Subject: Date alignment across tickers (no formula — set intersection of trading dates)
+  Module:    src/processor.py  (preprocess_data)
+
+
+================================================================================
+2. FORECASTING (PROPHET → EXPECTED RETURNS)
+================================================================================
+
+Subject: Prophet additive time-series model (library implementation)
+  Formula:  y(t) = g(t) + s(t) + h(t) + ε_t
+            g(t)  = trend (piecewise linear/logistic)
+            s(t)  = seasonality (Fourier terms; yearly & weekly enabled in settings)
+            h(t)  = holiday effects (US exchange calendar)
+            ε_t   = idiosyncratic error
+  Code:      Facebook Prophet library (not reimplemented in this repo)
+  Module:    src/model.py  (ProphetModel), src/settings.py  (PROPHET_PARAMS)
+  Note:      One Prophet model is fit per ticker on historical prices.
+
+Subject: One-step-ahead predicted price
+  Formula:  P̂_{t+1} = Prophet forecast at next trading step
+  Module:    src/model.py  (predict_next, predict_for_tickers)
+
+Subject: Predicted daily return from forecast (μ input to optimiser)
+  Formula:  r̂_i = (P̂_i - P_i) / P_i
+  Module:    src/model.py  (predict_for_tickers)
+  Used as:   expected_returns → μ in portfolio optimisation
+
+
+================================================================================
+3. MEAN-VARIANCE PORTFOLIO OPTIMISATION (MPT)
+================================================================================
+
+Subject: Portfolio expected return
+  Formula:  R_p = w^T μ = Σ_i w_i μ_i
+  Code:      np.dot(weights, mu)
+  Module:    src/optimiser.py, src/efficient_frontier.py
+
+Subject: Portfolio variance
+  Formula:  σ_p^2 = w^T Σ w
+  Code:      np.dot(weights.T, np.dot(cov, weights))
+  Module:    src/optimiser.py, src/efficient_frontier.py
+
+Subject: Mean-variance objective (maximised via minimisation of negative)
+  Formula:  maximise   U(w) = w^T μ - (λ/2) w^T Σ w
+            minimise  -U(w) = -(w^T μ - (λ/2) w^T Σ w)
+  Default:   λ = RISK_AVERSION = 5  (src/settings.py)
+  Optimiser: scipy.optimize.minimize, method="SLSQP"
+  Module:    src/optimiser.py  (optimize_portfolio_mean_variance)
+             src/efficient_frontier.py  (optimize_for_lambda)
+
+Subject: Full investment constraint
+  Formula:  Σ_i w_i = 1
+  Module:    src/optimiser.py, src/efficient_frontier.py
+
+Subject: Per-asset allocation bounds
+  Formula:  w_min ≤ w_i ≤ w_max
+  Defaults: w_min = 0.05 (5%), w_max = 1.0 (100%)
+  Module:    src/optimiser.py, src/settings.py
+
+Subject: Historical lookback for Σ (and fallback μ)
+  Default:  last 252 trading days (~1 year)
+  Module:    src/optimiser.py  (calculate_mean_variance)
+
+
+================================================================================
+4. PORTFOLIO RETURN AGGREGATION
+================================================================================
+
+Subject: Daily portfolio return (weighted sum of asset returns)
+  Formula:  R_{p,t} = Σ_i w_i R_{i,t}
+  Module:    src/portfolio_analysis.py  (portfolio_returns_from_weights)
+             src/backtesting.py  (portfolio_actual_return, portfolio_predicted_return)
+             src/streamlit_app.py  (calculate_portfolio_metrics, when weights available)
+
+Subject: Equal-weight portfolio return (benchmark)
+  Formula:  R_{eq,t} = (1/n) Σ_{i=1}^{n} R_{i,t}
+  Module:    src/backtesting.py  (_equal_weight_period_returns)
+
+
+================================================================================
+5. FORECAST ACCURACY & ERROR METRICS
+================================================================================
+
+Subject: Mean Absolute Percentage Error (MAPE) on prices
+  Formula:  MAPE = (100/n) Σ |(A_t - F_t) / A_t|
+            A_t = actual price, F_t = forecast price (A_t ≠ 0)
+  Module:    src/streamlit_app.py  (calculate_mape)
+             src/backtesting.py  (per-date price error, aggregated as avg_price_mape)
+             src/evaluation.py   (price_mape from scored Supabase rows)
+
+Subject: Per-observation price error (backtest)
+  Formula:  e_price = |P̂ - P_actual| / P_actual × 100
+  Module:    src/backtesting.py  (_calculate_result)
+
+Subject: Return forecast error (mean absolute error, labelled "return_mape" in code)
+  Formula:  e_return = |r̂ - r_actual|
+  Module:    src/backtesting.py, src/evaluation.py
+
+Subject: Root Mean Square Error (RMSE) on prices
+  Formula:  RMSE = sqrt( (1/n) Σ (A_t - F_t)^2 )
+  Module:    src/streamlit_app.py  (calculate_rmse)
+
+Subject: Mean Absolute Error (MAE) on prices
+  Formula:  MAE = (1/n) Σ |A_t - F_t|
+  Module:    src/streamlit_app.py  (calculate_mae)
+
+Subject: Actual return after forecast horizon (outcome scoring)
+  Formula:  r_actual = (P_actual - P_current) / P_current
+  Module:    src/database.py  (update_actual_outcomes)
+
+Subject: Price error (absolute, stored in database)
+  Formula:  price_error = P_actual - P_predicted
+  Module:    src/database.py
+
+Subject: Return error (stored in database)
+  Formula:  return_error = r_actual - r_predicted
+  Module:    src/database.py
+
+
+================================================================================
+6. CUMULATIVE & PERIOD RETURNS
+================================================================================
+
+Subject: Daily simple return from price series (dashboard / charts)
+  Formula:  R_t = P_t / P_{t-1} - 1   (pct_change)
+  Module:    src/streamlit_app.py  (calculate_cumulative_returns)
+
+Subject: Cumulative return from a return series
+  Formula:  CR_T = Π_{t=1}^{T} (1 + R_t) - 1
+  Code:      (1 + returns).cumprod() - 1
+  Module:    src/streamlit_app.py  (calculate_cumulative_returns)
+
+Subject: Cumulative portfolio return over backtest periods
+  Formula:  CR = Π_t (1 + R_{p,t}) - 1
+  Module:    src/backtesting.py  (_generate_summary)
+
+Subject: Buy-and-hold per-ticker cumulative return (benchmark helper)
+  Formula:  CR_i = Π_t (1 + R_{i,t}) - 1,  then equal-weight average across tickers
+  Module:    src/backtesting.py  (_buy_hold_equal_weight_return)
+
+Subject: SPY buy-and-hold return over date range
+  Formula:  (P_end - P_start) / P_start
+  Module:    src/backtesting.py  (_spy_buy_hold_return)
+
+Subject: Strategy outperformance vs predicted path
+  Formula:  outperformance = Π(1 + R_actual) / Π(1 + R_predicted) - 1
+  Module:    src/backtesting.py
+
+Subject: Excess return vs benchmark
+  Formula:  excess = CR_strategy - CR_benchmark
+  Module:    src/backtesting.py  (_generate_summary)
+
+
+================================================================================
+7. RISK METRICS (PORTFOLIO & ASSET LEVEL)
+================================================================================
+
+Subject: Annualised volatility
+  Formula:  σ_annual = σ_daily × sqrt(252)
+  Module:    src/risk_analytics.py, src/backtesting.py, src/sector_analysis.py,
+             src/streamlit_app.py
+
+Subject: Value at Risk (VaR) — historical simulation
+  Formula:  VaR_α = percentile(R, (1 - α) × 100)
+  Defaults:  α = 0.95 and 0.99
+  Module:    src/risk_analytics.py  (calculate_var)
+
+Subject: Conditional VaR / Expected Shortfall (CVaR)
+  Formula:  CVaR_α = E[R | R ≤ VaR_α] = mean of returns at or below VaR threshold
+  Module:    src/risk_analytics.py  (calculate_cvar)
+
+Subject: Sharpe ratio (annualised, with risk-free rate)
+  Formula:  SR = (mean(R - r_f/252) / std(R - r_f/252)) × sqrt(252)
+  Default:  r_f = 0.02 (2% annual)
+  Module:    src/risk_analytics.py  (calculate_sharpe_ratio)
+
+Subject: Sharpe ratio (dashboard variant — no explicit risk-free subtraction)
+  Formula:  SR ≈ mean(R) / std(R) × sqrt(252)
+  Module:    src/streamlit_app.py  (calculate_portfolio_metrics)
+
+Subject: Sharpe ratio (backtest summary — algebraically equivalent annualisation)
+  Formula:  SR = (mean(R) × 252) / (std(R) × sqrt(252))
+  Module:    src/backtesting.py  (_generate_summary)
+
+Subject: Sharpe ratio (efficient frontier point)
+  Formula:  SR = (R_p - r_f) / σ_p
+  Note:      σ_p = sqrt(w^T Σ w); returns/volatility not separately annualised here
+  Default:  r_f = 0.02
+  Module:    src/efficient_frontier.py  (calculate_portfolio_metrics)
+
+Subject: Sortino ratio (annualised, downside deviation)
+  Formula:  Sortino = (mean(R - r_f/252) / σ_down) × sqrt(252)
+            σ_down = sqrt( mean( min(R - r_f/252, 0)^2 ) )
+  Module:    src/risk_analytics.py  (calculate_sortino_ratio)
+
+Subject: Maximum drawdown
+  Formula:  CR_t = Π_{s≤t} (1 + R_s)
+            DD_t = (CR_t - max_{s≤t} CR_s) / max_{s≤t} CR_s
+            MaxDD = min_t DD_t   (negative value)
+  Module:    src/risk_analytics.py, src/backtesting.py
+
+Subject: Calmar ratio
+  Formula:  Calmar = (mean(R) × 252) / |MaxDD|
+  Module:    src/risk_analytics.py  (calculate_calmar_ratio)
+
+Subject: Annualised mean return (per-ticker risk summary)
+  Formula:  μ_annual = mean(R_daily) × 252
+  Module:    src/risk_analytics.py  (calculate_ticker_metrics)
+
+Subject: Distribution skewness
+  Formula:  scipy.stats.skew(R)
+  Module:    src/risk_analytics.py
+
+Subject: Distribution excess kurtosis
+  Formula:  scipy.stats.kurtosis(R)
+  Module:    src/risk_analytics.py
+
+Subject: Beta and Jensen's alpha (placeholders)
+  Formula:  Not computed in production path (stored as 0.0)
+  Module:    src/risk_analytics.py  (RiskMetrics.beta, RiskMetrics.alpha)
+
+
+================================================================================
+8. CONCENTRATION & DIVERSIFICATION
+================================================================================
+
+Subject: Herfindahl-Hirschman Index (HHI) — asset weights
+  Formula:  HHI = Σ_i w_i^2
+  Module:    src/risk_analytics.py  (calculate_portfolio_concentration)
+
+Subject: Effective number of assets (inverse HHI)
+  Formula:  N_eff = 1 / Σ_i w_i^2
+  Module:    src/risk_analytics.py
+
+Subject: Diversification ratio (portfolio level)
+  Formula:  DR = (Σ_i w_i σ_i) / σ_p
+  Module:    src/risk_analytics.py  (calculate_diversification_ratio)
+
+Subject: Sector total weight
+  Formula:  W_sector = Σ_{i ∈ sector} w_i
+  Module:    src/sector_analysis.py  (calculate_sector_weights)
+
+Subject: Sector HHI (concentration across sectors)
+  Formula:  HHI_sector = Σ_s W_s^2   where W_s = sector weight
+  Module:    src/sector_analysis.py  (calculate_sector_concentration)
+
+Subject: Effective number of sectors (entropy-based)
+  Formula:  p_s = W_s / Σ_k W_k
+            H = -Σ_s p_s ln(p_s)
+            ENS = exp(H)
+  Module:    src/sector_analysis.py  (calculate_sector_concentration)
+
+Subject: Sector volatility (weighted average of asset volatilities)
+  Formula:  σ_sector = Σ_{i ∈ sector} w_i σ_i,   σ_i = std(R_i) × sqrt(252)
+  Module:    src/sector_analysis.py  (calculate_sector_metrics)
+
+Subject: Sector expected return (weighted)
+  Formula:  μ_sector = Σ_{i ∈ sector} w_i μ_i
+  Module:    src/sector_analysis.py
+
+Subject: Sector contribution to portfolio return
+  Formula:  contrib_return = W_sector × μ_sector
+  Module:    src/sector_analysis.py
+
+Subject: Sector contribution to portfolio risk
+  Formula:  contrib_risk = W_sector × σ_sector
+  Module:    src/sector_analysis.py
+
+Subject: Intra-sector diversification ratio
+  Formula:  DR_sector = (Σ_{i ∈ sector} w_i σ_i) / σ_sector
+  Module:    src/sector_analysis.py
+
+
+================================================================================
+9. EFFICIENT FRONTIER
+================================================================================
+
+Subject: Frontier generation (vary risk aversion λ)
+  Formula:  Same as Section 3 objective, solved for λ ∈ [0.1, 100] on log-spaced grid
+  Points:    default 50 portfolios
+  Module:    src/efficient_frontier.py  (generate_frontier)
+
+Subject: Portfolio volatility on frontier
+  Formula:  σ_p = sqrt(w^T Σ w)
+  Module:    src/efficient_frontier.py  (calculate_portfolio_metrics)
+
+Subject: Maximum Sharpe portfolio on frontier
+  Selection: argmax SR among frontier points
+  Module:    src/efficient_frontier.py
+
+Subject: Minimum variance portfolio on frontier
+  Selection: highest λ (most risk-averse) among frontier points
+  Module:    src/efficient_frontier.py
+
+
+================================================================================
+10. KEY DEFAULT PARAMETERS (CONSTANTS IN CODE)
+================================================================================
+
+  RISK_AVERSION (λ)     = 5
+  MINIMUM_ALLOCATION    = 0.05  (5% per asset)
+  MAXIMUM_ALLOCATION    = 1.0
+  COVARIANCE_LOOKBACK   = 252 trading days
+  TRADING_DAYS_PER_YEAR = 252
+  RISK_FREE_RATE        = 0.02  (2% annual, risk analytics & frontier)
+  VaR / CVaR levels     = 95% and 99% confidence
+
+  Source: src/settings.py, src/risk_analytics.py, src/optimiser.py
+
+
+================================================================================
+11. FORMULA-TO-MODULE QUICK INDEX
+================================================================================
+
+  src/extractor.py          → daily returns (pct_change)
+  src/processor.py          → date alignment (no numeric formula)
+  src/model.py              → predicted return from Prophet price
+  src/optimiser.py          → μ, Σ, mean-variance objective, constraints
+  src/efficient_frontier.py → frontier objective, Sharpe per point, σ_p
+  src/portfolio_analysis.py → weighted portfolio returns
+  src/risk_analytics.py     → VaR, CVaR, Sharpe, Sortino, drawdown, HHI, DR, corr
+  src/sector_analysis.py    → sector weights, HHI, ENS, sector vol/return
+  src/backtesting.py        → MAPE, cumulative returns, benchmarks, Sharpe, drawdown
+  src/streamlit_app.py      → MAPE, RMSE, MAE, cumulative returns, dashboard Sharpe
+  src/database.py           → actual return, price/return errors
+  src/evaluation.py         → aggregated MAPE from stored outcomes
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================

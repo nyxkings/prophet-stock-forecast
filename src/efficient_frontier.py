@@ -268,7 +268,15 @@ class EfficientFrontier:
                     color=sharpe_ratios,
                     colorscale="Viridis",
                     showscale=True,
-                    colorbar=dict(title="Sharpe Ratio"),
+                    colorbar=dict(
+                        title="Sharpe Ratio",
+                        x=1.02,
+                        xanchor="left",
+                        len=0.75,
+                        y=0.5,
+                        yanchor="middle",
+                        thickness=15,
+                    ),
                 ),
                 hovertemplate="<b>Volatility:</b> %{x:.4f}<br>"
                 "<b>Expected Return:</b> %{y:.4f}<br>"
@@ -337,14 +345,36 @@ class EfficientFrontier:
                 # Skip if weights don't match tickers
                 pass
 
-        # Update layout
+        # Update layout — legend above plot; title centered below plot (via annotation)
         fig.update_layout(
-            title="Efficient Frontier - Risk vs Return",
             xaxis_title="Portfolio Volatility (Risk)",
             yaxis_title="Expected Return",
             hovermode="closest",
             height=600,
             template="plotly_white",
+            margin=dict(t=80, b=110, r=100),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5,
+                title=dict(text=""),
+            ),
+            legend_title_text="",
+            annotations=[
+                dict(
+                    text="Efficient Frontier - Risk vs Return",
+                    xref="paper",
+                    yref="paper",
+                    x=0.5,
+                    y=-0.1,
+                    xanchor="center",
+                    yanchor="top",
+                    showarrow=False,
+                    font=dict(size=16),
+                )
+            ],
         )
 
         return fig

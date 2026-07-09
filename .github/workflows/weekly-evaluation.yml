@@ -1,0 +1,43 @@
+name: Weekly Evaluation Smoke
+
+on:
+  schedule:
+    # Mondays 10:00 UTC
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --with dev
+
+      - name: Run evaluation smoke report
+        # Deterministic smoke only — no live Prophet walk-forward on PR cadence.
+        # Soft: never hard-fail on missing market data; smoke needs no network.
+        run: poetry run python -m src.main evaluate --mode smoke --output evaluation_report.json
+
+      - name: Upload evaluation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-report
+          path: evaluation_report.json
+
+      - name: Unit tests for evaluation module
+        run: poetry run pytest tests/test_evaluation.py tests/test_database.py -q --tb=short

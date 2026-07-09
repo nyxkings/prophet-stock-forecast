@@ -172,6 +172,27 @@ class TestPortfolioMetrics:
         assert len(perf_df) == 2
         assert set(perf_df["ticker"]) == {"AAPL", "MSFT"}
 
+    def test_compute_prediction_performance_uses_scored_actual_price(self):
+        """Prefer Supabase actual_price column over trailing history inference."""
+        data = pd.DataFrame(
+            {
+                "ticker": ["AAPL"],
+                "as_of_date": [date(2024, 1, 2)],
+                "predicted_price": [105.0],
+                "predicted_return": [0.02],
+                "portfolio_weight": [1.0],
+                "actual_price": [110.0],
+                "prediction_target_date": [date(2024, 1, 3)],
+                "actual_prices_last_month": [[100.0, 102.0]],
+            }
+        )
+
+        perf_df = compute_prediction_performance(data.to_json(orient="records", date_format="iso"))
+
+        assert len(perf_df) == 1
+        assert perf_df.iloc[0]["actual_price"] == 110.0
+        assert perf_df.iloc[0]["evaluation_date"] == date(2024, 1, 3)
+
     def test_calculate_portfolio_metrics_empty(self):
         """Test portfolio metrics with empty data."""
         perf_df = pd.DataFrame()

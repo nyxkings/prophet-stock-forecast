@@ -92,6 +92,27 @@ def format_backtest_summary(summary: BacktestSummary) -> str:
         f"  Cumulative actual return: {summary.cumulative_actual_return:.2%}",
         f"  Strategy outperformance: {summary.strategy_outperformance:.2%}",
     ]
+    if summary.benchmark_equal_weight_return is not None:
+        lines.append(
+            f"  Equal-weight benchmark: {summary.benchmark_equal_weight_return:.2%} "
+            f"(excess {summary.excess_return_vs_equal_weight:.2%})"
+            if summary.excess_return_vs_equal_weight is not None
+            else f"  Equal-weight benchmark: {summary.benchmark_equal_weight_return:.2%}"
+        )
+    if summary.benchmark_buy_hold_equal_weight_return is not None:
+        excess = summary.excess_return_vs_buy_hold_equal_weight
+        lines.append(
+            f"  Buy-&-hold equal-weight: {summary.benchmark_buy_hold_equal_weight_return:.2%}"
+            + (f" (excess {excess:.2%})" if excess is not None else "")
+        )
+    if summary.benchmark_spy_return is not None:
+        excess = summary.excess_return_vs_spy
+        lines.append(
+            f"  SPY buy-&-hold: {summary.benchmark_spy_return:.2%}"
+            + (f" (excess {excess:.2%})" if excess is not None else "")
+        )
+    elif summary.total_days_tested > 0:
+        lines.append("  SPY buy-&-hold: n/a")
     return "\n".join(lines)
 
 

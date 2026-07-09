@@ -25,6 +25,7 @@ import streamlit as st
 
 from src.database import get_supabase_client
 from src.efficient_frontier import EfficientFrontier
+from src.evaluation import build_report_from_stored_outcomes
 from src.mock_data import generate_mock_portfolio_data
 from src.optimiser import calculate_mean_variance
 from src.portfolio_analysis import (
@@ -198,6 +199,8 @@ def _parse_price_history(raw: object) -> list[float]:
 
 
 def _latest_actual_price(row: pd.Series) -> float | None:
+    if "actual_price" in row.index and pd.notna(row.get("actual_price")):
+        return float(row["actual_price"])
     prices = row.get("actual_prices_last_month", [])
     # Ensure prices are parsed as a list
     if isinstance(prices, str):
@@ -230,6 +233,32 @@ def build_price_history(row: pd.Series) -> tuple[pd.DataFrame, pd.DataFrame] | N
     return actual_df, predicted_df
 
 
+def _scored_rows_from_df(df: pd.DataFrame) -> list[dict[str, object]]:
+    """Rows with realised outcomes filled by score-outcomes."""
+    if "actual_price" not in df.columns:
+        return []
+    scored = df[df["actual_price"].notna()].copy()
+    return cast(list[dict[str, object]], scored.to_dict(orient="records"))
+
+
+def _render_stored_evaluation_summary(df: pd.DataFrame) -> None:
+    """Show unified evaluation metrics when Supabase rows are scored."""
+    scored_rows = _scored_rows_from_df(df)
+    if not scored_rows:
+        return
+
+    report = build_report_from_stored_outcomes(scored_rows, source="dashboard")
+    st.subheader("Stored Outcome Evaluation")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Scored predictions", report.num_observations)
+    c2.metric("Price MAPE", f"{report.price_mape:.2f}%")
+    c3.metric("Return MAPE", f"{report.return_mape:.4f}")
+    if report.start_date and report.end_date:
+        c4.metric("Period", f"{report.start_date} → {report.end_date}")
+    if report.notes:
+        st.caption(" · ".join(report.notes))
+
+
 @lru_cache(maxsize=1)
 def compute_prediction_performance(data_json: str) -> pd.DataFrame:
     """Compare past predictions against actual outcomes using successive days."""
@@ -249,11 +278,37 @@ def compute_prediction_performance(data_json: str) -> pd.DataFrame:
     df = df.sort_values(["ticker", "as_of_date"])
 
     records: list[dict[str, object]] = []
+    scored_keys: set[tuple[str, date]] = set()
+
+    if "actual_price" in df.columns:
+        for _, row in df.iterrows():
+            if pd.isna(row.get("actual_price")):
+                continue
+            ticker = str(row["ticker"])
+            as_of = row["as_of_date"]
+            scored_keys.add((ticker, as_of))
+            eval_date = row.get("prediction_target_date") or as_of
+            if isinstance(eval_date, str):
+                eval_date = pd.to_datetime(eval_date).date()
+            records.append(
+                {
+                    "ticker": ticker,
+                    "prediction_date": as_of,
+                    "evaluation_date": eval_date,
+                    "predicted_price": float(row["predicted_price"]),
+                    "actual_price": float(row["actual_price"]),
+                    "error": float(row["actual_price"]) - float(row["predicted_price"]),
+                    "portfolio_weight": float(row.get("portfolio_weight", 0.0)),
+                    "predicted_return": float(row.get("predicted_return", 0.0)),
+                }
+            )
 
     for ticker, group in df.groupby("ticker"):
         group = group.reset_index(drop=True)
         for idx in range(len(group) - 1):
             current = group.loc[idx]
+            if (ticker, current["as_of_date"]) in scored_keys:
+                continue
 
             prices = current.get("actual_prices_last_month")
             if not prices:
@@ -282,6 +337,8 @@ def compute_prediction_performance(data_json: str) -> pd.DataFrame:
         # Single-run fallback: compare latest prediction to last known actual price
         for ticker, group in df.groupby("ticker"):
             row = group.sort_values("as_of_date").iloc[-1]
+            if (str(ticker), row["as_of_date"]) in scored_keys:
+                continue
             prices = row.get("actual_prices_last_month")
             if isinstance(prices, str):
                 prices = _parse_price_history(prices)
@@ -713,6 +770,8 @@ def run_dashboard() -> None:
     # TAB 2: PREDICTION ACCURACY
     # ========================================================================
     with tab2:
+        _render_stored_evaluation_summary(df)
+
         tickers = date_df["ticker"].tolist()
         selected_ticker = st.selectbox(
             "Select ticker for detail analysis", options=tickers, index=0
@@ -1012,117 +1071,11 @@ def run_dashboard() -> None:
 
                 st.subheader("Risk vs Return")
 
-                current_weights = weights
-
-                fig = go.Figure()
-
-                volatilities = [p.volatility for p in frontier_result.frontier_points]
-                returns_list = [p.expected_return for p in frontier_result.frontier_points]
-                sharpe_ratios = [p.sharpe_ratio for p in frontier_result.frontier_points]
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=volatilities,
-                        y=returns_list,
-                        mode="lines",
-                        name="Efficient Frontier",
-                        line=dict(color="blue", width=2),
-                        hovertemplate="<b>Volatility:</b> %{x:.4f}<br>"
-                        "<b>Expected Return:</b> %{y:.4f}<br>"
-                        "<extra></extra>",
-                    )
-                )
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=volatilities,
-                        y=returns_list,
-                        mode="markers",
-                        name="Portfolio Points",
-                        marker=dict(
-                            size=6,
-                            color=sharpe_ratios,
-                            colorscale="Viridis",
-                            showscale=True,
-                            colorbar=dict(title="Sharpe Ratio"),
-                        ),
-                        hovertemplate="<b>Volatility:</b> %{x:.4f}<br>"
-                        "<b>Expected Return:</b> %{y:.4f}<br>"
-                        "<b>Sharpe Ratio:</b> %{marker.color:.4f}<br>"
-                        "<extra></extra>",
-                    )
-                )
+                fig = EfficientFrontier.plot_frontier(frontier_result, weights)
+                st.plotly_chart(fig, use_container_width=True)
 
                 min_var = frontier_result.min_variance_portfolio
-                fig.add_trace(
-                    go.Scatter(
-                        x=[min_var.volatility],
-                        y=[min_var.expected_return],
-                        mode="markers",
-                        name="Min Variance Portfolio",
-                        marker=dict(size=15, color="red", symbol="star"),
-                        hovertemplate="<b>Min Variance Portfolio</b><br>"
-                        f"<b>Volatility:</b> {min_var.volatility:.4f}<br>"
-                        f"<b>Expected Return:</b> {min_var.expected_return:.4f}<br>"
-                        f"<b>Sharpe Ratio:</b> {min_var.sharpe_ratio:.4f}<br>"
-                        "<extra></extra>",
-                    )
-                )
-
                 max_sharpe = frontier_result.max_sharpe_portfolio
-                fig.add_trace(
-                    go.Scatter(
-                        x=[max_sharpe.volatility],
-                        y=[max_sharpe.expected_return],
-                        mode="markers",
-                        name="Max Sharpe Portfolio",
-                        marker=dict(size=15, color="gold", symbol="diamond"),
-                        hovertemplate="<b>Max Sharpe Portfolio</b><br>"
-                        f"<b>Volatility:</b> {max_sharpe.volatility:.4f}<br>"
-                        f"<b>Expected Return:</b> {max_sharpe.expected_return:.4f}<br>"
-                        f"<b>Sharpe Ratio:</b> {max_sharpe.sharpe_ratio:.4f}<br>"
-                        "<extra></extra>",
-                    )
-                )
-
-                if current_weights:
-                    try:
-                        (
-                            curr_vol,
-                            curr_ret,
-                            curr_sharpe,
-                        ) = EfficientFrontier.calculate_portfolio_metrics(
-                            current_weights,
-                            mean_returns,
-                            cov_matrix,
-                        )
-                        fig.add_trace(
-                            go.Scatter(
-                                x=[curr_vol],
-                                y=[curr_ret],
-                                mode="markers",
-                                name="Current Portfolio",
-                                marker=dict(size=15, color="green", symbol="circle"),
-                                hovertemplate="<b>Current Portfolio</b><br>"
-                                f"<b>Volatility:</b> {curr_vol:.4f}<br>"
-                                f"<b>Expected Return:</b> {curr_ret:.4f}<br>"
-                                f"<b>Sharpe Ratio:</b> {curr_sharpe:.4f}<br>"
-                                "<extra></extra>",
-                            )
-                        )
-                    except (KeyError, ValueError):
-                        pass
-
-                fig.update_layout(
-                    title="Efficient Frontier - Risk vs Return",
-                    xaxis_title="Portfolio Volatility (Risk)",
-                    yaxis_title="Expected Return",
-                    hovermode="closest",
-                    height=600,
-                    template="plotly_white",
-                )
-
-                st.plotly_chart(fig, use_container_width=True)
 
                 st.subheader("Portfolio Allocations")
 
