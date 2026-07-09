@@ -326,6 +326,6 @@ class TestDatabaseIntegration:
             "weights": {},
         }
 
-        # Should raise ValueError when credentials missing
-        with pytest.raises(ValueError):
-            save_results_to_supabase(result)
+        with patch("src.database.get_supabase_client", return_value=None):
+            with pytest.raises(ValueError):
+                save_results_to_supabase(result)

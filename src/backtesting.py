@@ -29,6 +29,12 @@ class BacktestResult:
     portfolio_predicted_return: float
     portfolio_actual_return: float
 
+    # Comparative evaluation (Prophet vs baselines)
+    naive_price_mape: float = 0.0
+    drift_price_mape: float = 0.0
+    portfolio_historical_mpt_return: float = 0.0
+    portfolio_equal_weight_return: float = 0.0
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -43,6 +49,10 @@ class BacktestResult:
             "return_mape": self.return_mape,
             "portfolio_predicted_return": self.portfolio_predicted_return,
             "portfolio_actual_return": self.portfolio_actual_return,
+            "naive_price_mape": self.naive_price_mape,
+            "drift_price_mape": self.drift_price_mape,
+            "portfolio_historical_mpt_return": self.portfolio_historical_mpt_return,
+            "portfolio_equal_weight_return": self.portfolio_equal_weight_return,
         }
 
 
@@ -91,6 +101,20 @@ class BacktestSummary:
     excess_return_vs_buy_hold_equal_weight: float | None = None
     excess_return_vs_spy: float | None = None
 
+    # Comparative forecast accuracy vs baselines
+    avg_naive_price_mape: float = 0.0
+    avg_drift_price_mape: float = 0.0
+    prophet_mape_improvement_vs_naive: float = 0.0
+    prophet_win_rate_vs_naive: float = 0.0
+    prophet_win_rate_vs_drift: float = 0.0
+
+    # Comparative strategy performance
+    cumulative_historical_mpt_return: float | None = None
+    excess_return_vs_historical_mpt: float | None = None
+    strategy_win_rate_vs_equal_weight: float | None = None
+    strategy_win_rate_vs_historical_mpt: float | None = None
+    historical_mpt_sharpe_ratio: float | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -122,6 +146,16 @@ class BacktestSummary:
             "excess_return_vs_equal_weight": self.excess_return_vs_equal_weight,
             "excess_return_vs_buy_hold_equal_weight": self.excess_return_vs_buy_hold_equal_weight,
             "excess_return_vs_spy": self.excess_return_vs_spy,
+            "avg_naive_price_mape": self.avg_naive_price_mape,
+            "avg_drift_price_mape": self.avg_drift_price_mape,
+            "prophet_mape_improvement_vs_naive": self.prophet_mape_improvement_vs_naive,
+            "prophet_win_rate_vs_naive": self.prophet_win_rate_vs_naive,
+            "prophet_win_rate_vs_drift": self.prophet_win_rate_vs_drift,
+            "cumulative_historical_mpt_return": self.cumulative_historical_mpt_return,
+            "excess_return_vs_historical_mpt": self.excess_return_vs_historical_mpt,
+            "strategy_win_rate_vs_equal_weight": self.strategy_win_rate_vs_equal_weight,
+            "strategy_win_rate_vs_historical_mpt": self.strategy_win_rate_vs_historical_mpt,
+            "historical_mpt_sharpe_ratio": self.historical_mpt_sharpe_ratio,
         }
 
 
@@ -230,11 +264,19 @@ class Backtester:
                                 actual_returns[ticker] = result["predicted_returns"].get(ticker, 0)
 
                         # Calculate metrics
+                        comparative = self._comparative_metrics(
+                            result,
+                            actual_prices,
+                            actual_returns,
+                            training_start,
+                            test_date,
+                        )
                         backtest_result = self._calculate_result(
                             test_date.strftime("%Y-%m-%d"),
                             result,
                             actual_prices,
                             actual_returns,
+                            comparative=comparative,
                         )
 
                         self.results.append(backtest_result)
@@ -315,12 +357,77 @@ class Backtester:
         except Exception:
             return None
 
+    def _comparative_metrics(
+        self,
+        prediction: dict[str, Any],
+        actual_prices: dict[str, float],
+        actual_returns: dict[str, float],
+        training_start: pd.Timestamp,
+        test_date: pd.Timestamp,
+    ) -> dict[str, float]:
+        """Compute Prophet-vs-baseline forecast and strategy metrics for one date."""
+        from src.extractor import extract_data
+        from src.forecast_baselines import compare_forecast_mapes, implied_current_prices
+        from src.processor import preprocess_data
+        from src.strategy_comparison import (
+            equal_weight_weights,
+            historical_mean_mpt_weights,
+            portfolio_period_return,
+        )
+
+        defaults = {
+            "naive_price_mape": 0.0,
+            "drift_price_mape": 0.0,
+            "portfolio_historical_mpt_return": 0.0,
+            "portfolio_equal_weight_return": 0.0,
+        }
+        try:
+            portfolio_data = preprocess_data(
+                extract_data(
+                    self.tickers,
+                    start_date=training_start.strftime("%Y-%m-%d"),
+                    end_date=test_date.strftime("%Y-%m-%d"),
+                )
+            )
+            if not portfolio_data:
+                return defaults
+
+            predicted_prices = prediction.get("predictions", {})
+            predicted_returns = prediction.get("predicted_returns", {})
+            current_prices = implied_current_prices(predicted_prices, predicted_returns)
+            mean_returns = {
+                ticker: float(df["Returns"].mean())
+                for ticker, df in portfolio_data.items()
+                if "Returns" in df.columns and not df["Returns"].dropna().empty
+            }
+            forecast_mapes = compare_forecast_mapes(
+                actual_prices,
+                predicted_prices,
+                current_prices,
+                mean_returns,
+            )
+            hist_weights = historical_mean_mpt_weights(portfolio_data)
+            eq_weights = equal_weight_weights(self.tickers)
+            return {
+                "naive_price_mape": forecast_mapes["naive"],
+                "drift_price_mape": forecast_mapes["drift"],
+                "portfolio_historical_mpt_return": portfolio_period_return(
+                    hist_weights, actual_returns
+                ),
+                "portfolio_equal_weight_return": portfolio_period_return(
+                    eq_weights, actual_returns
+                ),
+            }
+        except Exception:
+            return defaults
+
     def _calculate_result(
         self,
         date: str,
         prediction: dict[str, Any],
         actual_prices: dict[str, float],
         actual_returns: dict[str, float],
+        comparative: dict[str, float] | None = None,
     ) -> BacktestResult:
         """Calculate result for a single backtest date."""
         predicted_prices = prediction.get("predicted_prices") or prediction.get("predictions", {})
@@ -361,6 +468,8 @@ class Backtester:
             for ticker in self.tickers
         )
 
+        comparative = comparative or {}
+
         return BacktestResult(
             date=date,
             predicted_prices=predicted_prices,
@@ -373,6 +482,14 @@ class Backtester:
             return_mape=return_mape,
             portfolio_predicted_return=portfolio_predicted_return,
             portfolio_actual_return=portfolio_actual_return,
+            naive_price_mape=float(comparative.get("naive_price_mape", 0.0)),
+            drift_price_mape=float(comparative.get("drift_price_mape", 0.0)),
+            portfolio_historical_mpt_return=float(
+                comparative.get("portfolio_historical_mpt_return", 0.0)
+            ),
+            portfolio_equal_weight_return=float(
+                comparative.get("portfolio_equal_weight_return", 0.0)
+            ),
         )
 
     def _generate_summary(
@@ -459,6 +576,30 @@ class Backtester:
             if bench_spy is not None:
                 excess_spy = cumulative_actual - bench_spy
 
+        # Comparative forecast and strategy aggregates
+        from src.forecast_baselines import prophet_improvement_vs_baseline, win_rate
+        from src.strategy_comparison import annualised_sharpe, strategy_win_rate
+
+        prophet_mapes = [r.price_mape for r in self.results]
+        naive_mapes = [r.naive_price_mape for r in self.results]
+        drift_mapes = [r.drift_price_mape for r in self.results]
+        hist_mpt_returns = [r.portfolio_historical_mpt_return for r in self.results]
+        eq_period_returns = [r.portfolio_equal_weight_return for r in self.results]
+
+        avg_prophet_mape = float(np.mean(prophet_mapes)) if prophet_mapes else 0.0
+        avg_naive_mape = float(np.mean(naive_mapes)) if naive_mapes else 0.0
+        avg_drift_mape = float(np.mean(drift_mapes)) if drift_mapes else 0.0
+        cumulative_hist_mpt = (
+            float(np.prod([1.0 + r for r in hist_mpt_returns]) - 1.0)
+            if hist_mpt_returns
+            else None
+        )
+        excess_hist_mpt = (
+            cumulative_actual - cumulative_hist_mpt
+            if cumulative_hist_mpt is not None
+            else None
+        )
+
         return BacktestSummary(
             start_date=start_date,
             end_date=end_date,
@@ -500,6 +641,22 @@ class Backtester:
             excess_return_vs_equal_weight=excess_eq,
             excess_return_vs_buy_hold_equal_weight=excess_bh,
             excess_return_vs_spy=excess_spy,
+            avg_naive_price_mape=avg_naive_mape,
+            avg_drift_price_mape=avg_drift_mape,
+            prophet_mape_improvement_vs_naive=prophet_improvement_vs_baseline(
+                avg_prophet_mape, avg_naive_mape
+            ),
+            prophet_win_rate_vs_naive=win_rate(prophet_mapes, naive_mapes),
+            prophet_win_rate_vs_drift=win_rate(prophet_mapes, drift_mapes),
+            cumulative_historical_mpt_return=cumulative_hist_mpt,
+            excess_return_vs_historical_mpt=excess_hist_mpt,
+            strategy_win_rate_vs_equal_weight=strategy_win_rate(
+                actual_returns, eq_period_returns
+            ),
+            strategy_win_rate_vs_historical_mpt=strategy_win_rate(
+                actual_returns, hist_mpt_returns
+            ),
+            historical_mpt_sharpe_ratio=annualised_sharpe(hist_mpt_returns),
         )
 
     def results_to_dataframe(self) -> pd.DataFrame:

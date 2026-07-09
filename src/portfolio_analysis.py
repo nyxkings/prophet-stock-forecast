@@ -91,7 +91,34 @@ def format_backtest_summary(summary: BacktestSummary) -> str:
         f"  Max drawdown: {summary.portfolio_max_drawdown:.2%}",
         f"  Cumulative actual return: {summary.cumulative_actual_return:.2%}",
         f"  Strategy outperformance: {summary.strategy_outperformance:.2%}",
+        "",
+        "Forecast comparison (avg MAPE %):",
+        f"  Prophet: {summary.avg_price_mape:.2f}%",
+        f"  Naive (random walk): {summary.avg_naive_price_mape:.2f}%",
+        f"  Drift (historical mean return): {summary.avg_drift_price_mape:.2f}%",
+        f"  Prophet improvement vs naive: {summary.prophet_mape_improvement_vs_naive:.2f} pp",
+        f"  Prophet win rate vs naive: {summary.prophet_win_rate_vs_naive:.1%}",
+        "",
+        "Strategy comparison:",
     ]
+    if summary.cumulative_historical_mpt_return is not None:
+        lines.append(
+            f"  Historical-μ MPT cumulative: {summary.cumulative_historical_mpt_return:.2%}"
+        )
+        if summary.excess_return_vs_historical_mpt is not None:
+            lines.append(
+                f"  Prophet MPT excess vs historical-μ MPT: "
+                f"{summary.excess_return_vs_historical_mpt:.2%}"
+            )
+    if summary.strategy_win_rate_vs_equal_weight is not None:
+        lines.append(
+            f"  Win rate vs equal-weight: {summary.strategy_win_rate_vs_equal_weight:.1%}"
+        )
+    if summary.strategy_win_rate_vs_historical_mpt is not None:
+        lines.append(
+            f"  Win rate vs historical-μ MPT: "
+            f"{summary.strategy_win_rate_vs_historical_mpt:.1%}"
+        )
     if summary.benchmark_equal_weight_return is not None:
         lines.append(
             f"  Equal-weight benchmark: {summary.benchmark_equal_weight_return:.2%} "

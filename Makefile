@@ -1,4 +1,4 @@
-.PHONY: install install-dev lint format type-check test clean run dashboard backtest analyze risk sector score-outcomes evaluate
+.PHONY: install install-dev lint format type-check test clean run dashboard backtest analyze risk sector score-outcomes evaluate compare
 
 install:
 	poetry install --no-dev
@@ -57,4 +57,7 @@ score-outcomes:
 
 evaluate:
 	poetry run python -m src.main evaluate --mode smoke
+
+compare:
+	poetry run python -m src.main compare
 

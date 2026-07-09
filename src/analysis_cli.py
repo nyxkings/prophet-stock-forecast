@@ -23,7 +23,7 @@ from src.settings import END_DATE, PORTFOLIO_TICKERS, START_DATE
 logger = logging.getLogger(__name__)
 
 ANALYSIS_COMMANDS = frozenset(
-    {"backtest", "risk", "sector", "analyze", "score-outcomes", "evaluate"}
+    {"backtest", "risk", "sector", "analyze", "score-outcomes", "evaluate", "compare"}
 )
 
 
@@ -91,6 +91,20 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--end", default=END_DATE, help="Backtest end (mode=backtest)")
     evaluate.add_argument("--training-days", type=int, default=252)
 
+    compare = subparsers.add_parser(
+        "compare",
+        help="Walk-forward comparison: Prophet vs forecast baselines and portfolio alternatives",
+    )
+    compare.add_argument("--tickers", nargs="+", default=PORTFOLIO_TICKERS)
+    compare.add_argument("--start", default=None, help="Backtest start date (YYYY-MM-DD)")
+    compare.add_argument("--end", default=END_DATE, help="Backtest end date (YYYY-MM-DD)")
+    compare.add_argument("--training-days", type=int, default=252)
+    compare.add_argument(
+        "--output",
+        default="comparative_evaluation.json",
+        help="JSON path for comparative evaluation report",
+    )
+
     return parser
 
 
@@ -126,9 +140,27 @@ def run_backtest_command(args: argparse.Namespace) -> None:
     report_path = save_backtest_report(backtester, args.output)
     print(f"\nBacktest report saved to {report_path}")
 
-    evaluation = build_report_from_backtest(summary)
+    evaluation = build_report_from_backtest(summary, results=backtester.results)
     eval_path = evaluation.write_json(args.evaluation_output)
     print(f"Evaluation report saved to {eval_path}")
+
+
+def run_compare_command(args: argparse.Namespace) -> None:
+    """Run comparative evaluation with Prophet vs baselines and alternative strategies."""
+    from src.evaluation import build_report_from_backtest
+
+    start_date = args.start or _default_backtest_start()
+    backtester = Backtester(tickers=args.tickers)
+    summary = backtester.run(
+        start_date=start_date,
+        end_date=args.end,
+        training_days=args.training_days,
+    )
+    print(format_backtest_summary(summary))
+    report = build_report_from_backtest(summary, source="comparative", results=backtester.results)
+    path = report.write_json(args.output)
+    print(report.to_markdown())
+    print(f"\nComparative evaluation saved to {path}")
 
 
 def run_risk_command(args: argparse.Namespace) -> None:
@@ -225,7 +257,7 @@ def run_evaluate_command(args: argparse.Namespace) -> None:
                 end_date=args.end,
                 training_days=args.training_days,
             )
-            report = build_report_from_backtest(summary)
+            report = build_report_from_backtest(summary, results=backtester.results)
         except Exception as exc:
             logger.warning("Backtest evaluation failed (%s); writing smoke report.", exc)
             report = build_smoke_report()
@@ -261,6 +293,8 @@ def dispatch(argv: list[str]) -> bool:
         run_score_outcomes_command(args)
     elif args.command == "evaluate":
         run_evaluate_command(args)
+    elif args.command == "compare":
+        run_compare_command(args)
     return True
 
 

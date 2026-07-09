@@ -40,4 +40,7 @@ jobs:
           path: evaluation_report.json
 
       - name: Unit tests for evaluation module
-        run: poetry run pytest tests/test_evaluation.py tests/test_database.py -q --tb=short
+        run: |
+          poetry run pytest tests/test_evaluation.py tests/test_forecast_baselines.py \
+            tests/test_strategy_comparison.py tests/test_comparative_evaluation.py \
+            tests/test_database.py -q --tb=short

@@ -21,8 +21,13 @@ class TestAnalysisCli:
         assert "analyze" in ANALYSIS_COMMANDS
         assert "score-outcomes" in ANALYSIS_COMMANDS
         assert "evaluate" in ANALYSIS_COMMANDS
+        assert "compare" in ANALYSIS_COMMANDS
 
-    def test_dispatch_handles_analyze(self) -> None:
+    def test_dispatch_handles_compare(self) -> None:
+        with patch("src.analysis_cli.run_compare_command") as mock_run:
+            handled = dispatch(["compare", "--start", "2024-01-01", "--end", "2024-03-01"])
+        assert handled is True
+        mock_run.assert_called_once()
         with patch("src.analysis_cli.run_analyze_command") as mock_run:
             handled = dispatch(["analyze"])
         assert handled is True

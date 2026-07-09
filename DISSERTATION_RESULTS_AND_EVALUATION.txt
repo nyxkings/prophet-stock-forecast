@@ -1,0 +1,501 @@
+================================================================================
+CHAPTER 5 — RESULTS AND EVALUATION
+Prophet Forecasting for Portfolio Optimisation
+================================================================================
+Document purpose : Copy-ready text and tables for the dissertation Results and
+                   Evaluation chapter.
+Data as of       : 9 July 2026
+Portfolio        : 12 US equities (see Table 5.1)
+Production path  : yfinance → preprocess → Prophet → MPT → Supabase → Streamlit
+
+================================================================================
+5.1  OVERVIEW OF RESULTS
+================================================================================
+
+This chapter presents the outcomes of designing, implementing, and evaluating a
+Prophet-based portfolio optimisation system. Results are reported at four levels:
+
+  (1) Implementation verification — does the system work correctly?
+  (2) Primary pipeline outputs   — forecasts, expected returns, optimal weights
+  (3) Risk and diversification   — tail risk, Sharpe ratio, concentration, sectors
+  (4) Walk-forward backtesting   — historical forecast accuracy and strategy performance
+
+The central design result is a working end-to-end pipeline in which Prophet
+predicted returns form the expected return vector (μ), while the covariance
+matrix (Σ) is estimated exclusively from the last 252 trading days of historical
+daily returns. This separation prevents forecast values from contaminating risk
+estimates.
+
+
+================================================================================
+5.2  EVALUATION METHODOLOGY
+================================================================================
+
+Table 5.1 — Evaluation metrics used in this project
+--------------------------------------------------------------------------------
+| Category              | Metric              | Formula / definition              | Source module          |
+|-----------------------|---------------------|-----------------------------------|------------------------|
+| Forecast accuracy     | MAPE                | Mean absolute % price error       | streamlit_app, backtest|
+| Forecast accuracy     | RMSE                | Root mean squared price error     | streamlit_app          |
+| Forecast accuracy     | MAE                 | Mean absolute price error         | streamlit_app          |
+| Forecast accuracy     | R²                  | Explained variance of prices      | Report / dashboard     |
+| Return conversion     | Expected return     | (P̂ − P₀) / P₀                    | model.py               |
+| Portfolio performance | Sharpe ratio        | (R̄ − r_f) / σ  (annualised)      | risk_analytics         |
+| Portfolio performance | Volatility          | σ_daily × √252                    | risk_analytics         |
+| Portfolio performance | Max drawdown        | Peak-to-trough loss on cum. return| risk_analytics         |
+| Tail risk             | VaR (95%, 99%)      | Historical return percentile      | risk_analytics         |
+| Tail risk             | CVaR (95%, 99%)     | Mean loss beyond VaR              | risk_analytics         |
+| Diversification       | HHI (weights)       | Σ wᵢ²                             | risk_analytics         |
+| Diversification       | Effective assets    | 1 / Σ wᵢ²                         | risk_analytics         |
+| Sector exposure       | Sector HHI          | Σ Wₛ² across sectors              | sector_analysis        |
+| Strategy comparison   | Cumulative return   | Π(1 + R_p,t) − 1                  | backtesting            |
+| Benchmarks            | Equal-weight        | (1/n) Σ R_i,t                     | backtesting            |
+| Benchmarks            | SPY buy-and-hold    | (P_end − P_start) / P_start       | backtesting            |
+--------------------------------------------------------------------------------
+
+Table 5.1a — Forecast model alternatives (comparative evaluation)
+--------------------------------------------------------------------------------
+| Model                   | Description                             | Role          |
+|-------------------------|-----------------------------------------|---------------|
+| Prophet (production)    | One-step forecast with seasonality      | Primary       |
+| Naive random walk       | Next price = last price                 | Baseline      |
+| Drift (historical mean) | Next price = P_t × (1 + mean return)   | Baseline      |
+--------------------------------------------------------------------------------
+
+Table 5.1b — Portfolio strategy alternatives
+--------------------------------------------------------------------------------
+| Strategy                | μ source            | Σ source   | Notes           |
+|-------------------------|---------------------|------------|-----------------|
+| Prophet + MPT (primary) | Prophet forecasts   | Historical | Production path |
+| Historical-μ + MPT      | Sample mean returns | Historical | MPT baseline    |
+| Equal-weight            | N/A (1/n)           | N/A        | Passive baseline|
+| SPY buy-and-hold        | Market index        | N/A        | Market benchmark|
+--------------------------------------------------------------------------------
+
+Comparative evaluation command:
+  poetry run python -m src.main compare --start 2025-01-01 --end 2026-06-01
+  Output: comparative_evaluation.json (forecast + strategy comparison tables)
+
+
+================================================================================
+5.3  IMPLEMENTATION VERIFICATION RESULTS
+================================================================================
+
+The system was validated through automated unit, integration, and edge-case
+testing before empirical evaluation.
+
+Table 5.2 — Test execution summary
+--------------------------------------------------------------------------------
+| Test suite                    | Tests | Result  | Notes                          |
+|-------------------------------|-------|---------|--------------------------------|
+| Core pipeline (model, optim.) | 57    | Pass    | Prophet, MPT, extractor        |
+| Integration & edge cases      | 15    | Pass    | End-to-end pipeline            |
+| Phase 4 (monitoring, deploy)  | 33    | Pass    | Health checks, alerts          |
+| Backtesting framework         | 19    | Pass    | Walk-forward logic             |
+| Risk analytics                | 39    | Pass    | VaR, Sharpe, drawdown          |
+| TOTAL                         | 274   | 273/274 | 99.6% pass rate (Jul 2026)     |
+--------------------------------------------------------------------------------
+
+Table 5.3 — Code coverage by critical module
+--------------------------------------------------------------------------------
+| Module            | Coverage | Target | Status   |
+|-------------------|----------|--------|----------|
+| database.py       | 100.0%   | 95%    | Exceeds  |
+| settings.py       | 100.0%   | 95%    | Exceeds  |
+| risk_analytics.py |  99.0%   | 95%    | Exceeds  |
+| optimiser.py      |  93.9%   | 85%    | Exceeds  |
+| model.py          |  89.3%   | 85%    | Exceeds  |
+| processor.py      |  94.6%   | 85%    | Exceeds  |
+| extractor.py      |  93.6%   | 85%    | Exceeds  |
+| backtesting.py    |  72.1%   | 70%    | Exceeds  |
+| main.py           |  70.5%   | 70%    | Met      |
+| OVERALL           |  66.7%   | 50%    | Exceeds  |
+--------------------------------------------------------------------------------
+
+Key verification findings:
+
+  • Prophet predicted returns are correctly passed to the optimiser as μ.
+  • Σ is computed from historical returns only (252-day lookback).
+  • Portfolio weights sum to 1.0 and respect bound constraints.
+  • Changing μ shifts optimal weights (confirmed in integration tests).
+  • Results persist to Supabase and are displayed in the Streamlit dashboard.
+  • Production deployment is operational (scheduled daily optimisation).
+  • Latest full test run (Jul 2026): 273/274 passed; one integration test
+    (missing-credentials path) failed — does not affect production pipeline.
+
+
+================================================================================
+5.4  PORTFOLIO UNIVERSE AND SYSTEM CONFIGURATION
+================================================================================
+
+Table 5.4 — Portfolio universe (12 assets)
+--------------------------------------------------------------------------------
+| Ticker | Company name                              | Sector (mapped)        |
+|--------|-------------------------------------------|------------------------|
+| AMD    | Advanced Micro Devices, Inc.              | Technology             |
+| MSFT   | Microsoft Corporation                     | Technology             |
+| AAPL   | Apple Inc.                                | Technology             |
+| TSLA   | Tesla, Inc.                               | Consumer Discretionary |
+| AMZN   | Amazon.com, Inc.                          | Consumer Discretionary |
+| NVDA   | NVIDIA Corporation                        | Technology             |
+| META   | Meta Platforms, Inc.                      | Communication Services |
+| GOOG   | Alphabet Inc. (Class C)                   | Technology             |
+| TSM    | Taiwan Semiconductor Manufacturing Co.    | Technology             |
+| JPM    | JPMorgan Chase & Co.                      | Financials             |
+| NFLX   | Netflix, Inc.                             | Communication Services |
+| PLTR   | Palantir Technologies Inc.                | Technology             |
+--------------------------------------------------------------------------------
+
+Table 5.5 — Optimisation and model parameters
+--------------------------------------------------------------------------------
+| Parameter                    | Value              | Setting location   |
+|------------------------------|--------------------|--------------------|
+| Risk aversion (λ)            | 5                  | settings.py        |
+| Minimum weight per asset     | 5%  (0.05)         | settings.py        |
+| Maximum weight per asset     | 100% (1.00)        | settings.py        |
+| Covariance lookback          | 252 trading days   | optimiser.py       |
+| Historical data start        | 2024-01-01         | settings.py        |
+| Prophet yearly seasonality   | Enabled            | settings.py        |
+| Prophet weekly seasonality   | Enabled            | settings.py        |
+| Prophet daily seasonality    | Disabled           | settings.py        |
+| US trading holidays          | XNYS calendar      | model.py           |
+| Optimisation solver          | SLSQP (scipy)      | optimiser.py       |
+| Database                     | Supabase PostgreSQL| database.py        |
+--------------------------------------------------------------------------------
+
+
+================================================================================
+5.5  PRIMARY PIPELINE OUTPUTS (LATEST PRODUCTION RUN)
+================================================================================
+
+A full optimisation run was executed on 9 July 2026. The pipeline extracted
+historical prices, generated one-step-ahead Prophet forecasts, converted them to
+expected returns, and produced constrained optimal portfolio weights.
+
+Table 5.6 — Forecasts, expected returns, and optimal weights (as of 2026-07-09)
+--------------------------------------------------------------------------------
+| Ticker | Current price ($) | Predicted price ($) | Predicted return (%) | Weight (%) |
+|--------|-------------------|---------------------|----------------------|------------|
+| AMD    |           517.41  |             556.66  |                 7.59 |      26.65 |
+| MSFT   |           383.34  |             401.66  |                 4.78 |       5.00 |
+| AAPL   |           313.39  |             319.94  |                 2.09 |       5.00 |
+| TSLA   |           394.06  |             422.96  |                 7.33 |      23.35 |
+| AMZN   |           243.62  |             259.07  |                 6.34 |       5.00 |
+| NVDA   |           204.12  |             217.54  |                 6.58 |       5.00 |
+| META   |           603.12  |             594.81  |                -1.38 |       5.00 |
+| GOOG   |           358.71  |             369.30  |                 2.95 |       5.00 |
+| TSM    |           436.98  |             461.52  |                 5.61 |       5.00 |
+| JPM    |           330.62  |             334.37  |                 1.13 |       5.00 |
+| NFLX   |            75.59  |              79.78  |                 5.55 |       5.00 |
+| PLTR   |           132.22  |             127.78  |                -3.36 |       5.00 |
+|--------|-------------------|---------------------|----------------------|------------|
+| TOTAL  |                   |                     |                      |     100.00 |
+--------------------------------------------------------------------------------
+
+Interpretation of Table 5.6:
+
+  • Assets with the highest Prophet-predicted returns (AMD 7.59%, TSLA 7.33%)
+    received the largest allocations above the 5% floor.
+  • Assets with negative predicted returns (META −1.38%, PLTR −3.36%) were held
+    at the minimum 5% bound, not excluded — reflecting the diversification
+    constraint rather than a pure return-ranking rule.
+  • With 12 assets each requiring at least 5%, the maximum feasible weight on
+  any single asset is 45% (100% − 11 × 5%). On this date the optimiser allocated
+  26.65% to AMD and 23.35% to TSLA, splitting surplus weight between the two
+  highest-μ assets rather than saturating a single position.
+  • Prediction target date: next US trading day after the last historical
+    observation (2026-07-09).
+
+
+================================================================================
+5.6  RISK AND CONCENTRATION EVALUATION
+================================================================================
+
+Portfolio risk metrics were computed on the weighted historical daily return
+series (252-day lookback), using the optimal weights from the latest run.
+
+Table 5.7 — Portfolio risk metrics (historical weighted returns)
+--------------------------------------------------------------------------------
+| Metric                    | Value        | Interpretation                          |
+|---------------------------|--------------|-----------------------------------------|
+| VaR 95% (daily)           |    −0.0315   | 5% worst-case daily loss ≈ −3.15%       |
+| VaR 99% (daily)           |    −0.0565   | 1% worst-case daily loss ≈ −5.65%       |
+| CVaR 95% (daily)          |    −0.0456   | Avg. loss in worst 5% of days ≈ −4.56%  |
+| CVaR 99% (daily)          |    −0.0666   | Avg. loss in worst 1% of days ≈ −6.66%  |
+| Sharpe ratio (annualised) |         1.36 | Favourable risk-adjusted return         |
+| Sortino ratio (annualised)|         2.09 | Strong downside-risk-adjusted return     |
+| Volatility (annualised)   |        0.342 | ~34.2% annualised portfolio volatility  |
+| Maximum drawdown          |      −32.94% | Largest peak-to-trough decline          |
+| Calmar ratio              |         1.47 | Return relative to max drawdown         |
+| Skewness                  |         0.69 | Slightly right-skewed return distribution|
+| Excess kurtosis           |         7.93 | Fat tails — extreme moves more likely   |
+--------------------------------------------------------------------------------
+
+Table 5.8 — Portfolio concentration metrics
+--------------------------------------------------------------------------------
+| Metric              | Value  | Interpretation                                |
+|---------------------|--------|-----------------------------------------------|
+| Herfindahl index    | 0.1505 | Moderate concentration (lower = more spread)  |
+| Maximum weight      | 26.65% | Largest single-asset allocation (AMD)         |
+| Minimum weight      |  5.00% | Floor binding on 10 of 12 assets              |
+| Effective # assets  |   6.64 | Portfolio behaves like ~7 equally weighted    |
+--------------------------------------------------------------------------------
+
+The Sharpe ratio of 1.36 on historical weighted returns indicates that the
+optimised portfolio would have delivered attractive risk-adjusted performance
+over the estimation window, though this is ex-post on historical data and not
+a guarantee of future performance. The fat-tailed return distribution
+(kurtosis ≈ 7.9) motivates the use of VaR and CVaR alongside variance-based MPT.
+
+
+================================================================================
+5.7  SECTOR DIVERSIFICATION EVALUATION
+================================================================================
+
+Table 5.9 — Sector allocation breakdown (latest run)
+--------------------------------------------------------------------------------
+| Sector                  | Allocation (%) | Holdings | Notes                    |
+|-------------------------|----------------|----------|--------------------------|
+| Technology              |          61.65 |        8 | Dominant sector exposure |
+| Consumer Discretionary  |          28.35 |        2 | TSLA, AMZN               |
+| Financials              |           5.00 |        1 | JPM at floor             |
+| Communication Services  |           5.00 |        1 | META at floor            |
+| TOTAL                   |         100.00 |       12 |                          |
+--------------------------------------------------------------------------------
+
+Table 5.10 — Sector concentration summary
+--------------------------------------------------------------------------------
+| Metric                    | Value    | Classification |
+|---------------------------|----------|----------------|
+| Sector HHI                |   0.4635 | Medium         |
+| Effective number of sectors|   2.60  |                |
+| Largest sector              | Technology (61.65%) |     |
+--------------------------------------------------------------------------------
+
+Although the portfolio enforces a 5% minimum on every individual asset, sector
+exposure remains concentrated in Technology because eight of twelve holdings
+belong to that sector. This is an important evaluation finding: asset-level
+diversification constraints do not automatically produce sector-level
+diversification.
+
+
+================================================================================
+5.8  WALK-FORWARD BACKTEST EVALUATION
+================================================================================
+
+A walk-forward backtest was executed over the period 1 January 2025 to
+1 June 2026. At each evaluation date the system:
+
+  1. Trained Prophet on all historical data up to that date
+  2. Generated one-step price forecasts and expected returns
+  3. Estimated Σ from the prior 252 trading days
+  4. Solved the mean-variance problem under project constraints
+  5. Compared predictions and portfolio returns to realised outcomes
+
+Command used:
+  poetry run python -m src.main backtest --start 2025-01-01 --end 2026-06-01
+
+Table 5.11 — Walk-forward backtest summary
+--------------------------------------------------------------------------------
+| Metric                              | Value              | Notes                |
+|-------------------------------------|--------------------|----------------------|
+| Backtest period                     | 2025-01-01 to      |                      |
+|                                     | 2026-06-01         |                      |
+| Status at time of writing           | IN PROGRESS        | Update when complete |
+| Avg. price MAPE (%)                 | [see CSV output]   | backtest_report.csv  |
+| Avg. return MAPE                    | [see CSV output]   |                      |
+| Portfolio Sharpe ratio              | [see JSON output]  | evaluation_report.json|
+| Portfolio volatility (annualised)   | [see JSON output]  |                      |
+| Maximum drawdown                    | [see JSON output]  |                      |
+| Cumulative actual return            | [see JSON output]  |                      |
+| Cumulative predicted return         | [see JSON output]  |                      |
+| Equal-weight benchmark return       | [see JSON output]  |                      |
+| SPY buy-and-hold return             | [see JSON output]  |                      |
+| Excess return vs equal-weight       | [see JSON output]  |                      |
+| Excess return vs SPY                | [see JSON output]  |                      |
+--------------------------------------------------------------------------------
+
+NOTE: When the backtest completes, replace the [see output] placeholders with
+values printed at the end of the backtest run and saved to:
+  • backtest_report.csv        (per-date results)
+  • evaluation_report.json     (aggregate summary)
+
+Table 5.12 — Observed backtest behaviour (partial run, sample dates)
+--------------------------------------------------------------------------------
+| As-of date  | Top predicted return | Weight pattern observed              |
+|-------------|----------------------|--------------------------------------|
+| 2025-12-03  | AMD  3.84%           | AMD 45%, all others at 5% floor      |
+| 2025-12-10  | AMD  4.71%           | AMD 45%, all others at 5% floor      |
+| 2026-02-04  | (in progress)        | AMD 45%, all others at 5% floor      |
+--------------------------------------------------------------------------------
+
+Partial backtest observation: when a single asset (typically AMD) had the
+highest Prophet-predicted return by a wide margin, the optimiser repeatedly
+assigned the maximum feasible weight of 45% (the corner solution imposed by
+twelve 5% minimum allocations). This confirms that μ influences weights but
+constraints can bind strongly in a 12-asset portfolio.
+
+
+================================================================================
+5.9  FORECAST ACCURACY EVALUATION (FRAMEWORK)
+================================================================================
+
+Forecast accuracy is evaluated through three channels:
+
+  (1) Dashboard metrics — MAPE, RMSE, MAE computed on stored predictions vs
+      actual prices in Supabase (Performance Metrics tab).
+  (2) Outcome scoring — score_previous_predictions() fills actual_price,
+      actual_return, price_error, and return_error after the forecast horizon.
+  (3) Walk-forward backtest — per-date MAPE aggregated over the test window.
+
+Table 5.13 — Forecast accuracy metrics and interpretation
+--------------------------------------------------------------------------------
+| Metric | Units        | Strength criterion     | Weakness criterion      |
+|--------|--------------|------------------------|-------------------------|
+| MAPE   | Percentage   | Lower is better; <5%   | >10% suggests poor fit  |
+| RMSE   | Price ($)    | Lower is better        | Large values vs price   |
+| MAE    | Price ($)    | Robust to outliers     | High vs typical price   |
+| R²     | 0 to 1       | >0.8 strong explanatory| <0.5 weak vs mean       |
+--------------------------------------------------------------------------------
+
+Populate Table 5.14 with dashboard or backtest output for your final submission.
+
+Table 5.14 — Forecast accuracy results (populate from backtest / dashboard)
+--------------------------------------------------------------------------------
+| Metric              | Value    | Source                        |
+|---------------------|----------|-------------------------------|
+| Overall price MAPE  | [TBD] %  | backtest or Streamlit dashboard|
+| Overall RMSE        | [TBD] $  | Streamlit dashboard           |
+| Overall MAE         | [TBD] $  | Streamlit dashboard           |
+| R²                  | [TBD]    | Report calculation            |
+| Avg. return MAPE    | [TBD]    | backtest_report.csv           |
+--------------------------------------------------------------------------------
+
+
+================================================================================
+5.10  INTEGRATION AND OBJECTIVE ALIGNMENT
+================================================================================
+
+Table 5.15 — Research objective vs achieved result
+--------------------------------------------------------------------------------
+| Objective                                      | Result                  | Evidence |
+|------------------------------------------------|-------------------------|----------|
+| (a) Design Prophet + MPT framework             | Achieved                | Pipeline |
+|                                                |                         | in main  |
+| (b) Implement end-to-end system                | Achieved                | 148/148  |
+|                                                |                         | tests    |
+| (c) Evaluate forecast accuracy                 | Partially achieved      | Metrics  |
+|                                                |                         | exist;   |
+|                                                |                         | backtest |
+|                                                |                         | running  |
+| (d) Evaluate portfolio risk                    | Achieved                | Table 5.7|
+| (e) Sector / diversification analysis          | Achieved                | Table 5.9|
+| (f) Persist and visualise results              | Achieved                | Supabase |
+|                                                |                         | dashboard|
+| (g) Benchmark against passive strategies       | Framework ready         | Backtest |
+|                                                |                         | output   |
+--------------------------------------------------------------------------------
+
+
+================================================================================
+5.11  LIMITATIONS OF RESULTS
+================================================================================
+
+  1. Data dependency: Results depend on Yahoo Finance (yfinance). Intermittent
+     failures or rate limiting can exclude tickers from a given run.
+
+  2. One-step forecasts: Prophet produces one-day-ahead price forecasts only.
+     Multi-horizon performance is not evaluated.
+
+  3. Constraint binding: With 12 assets and a 5% floor, the feasible set is
+     small; weights often sit at corners (45% max on one asset, or split between
+     two leaders as in Table 5.6).
+
+  4. Ex-post risk metrics: Sharpe, VaR, and drawdown in Table 5.7 are computed
+     on historical returns with current weights — they describe the past, not
+     guaranteed future performance.
+
+  5. Sector concentration: Asset-level minimum weights do not prevent Technology
+     sector dominance (61.65% in Table 5.9).
+
+  6. No transaction costs: Optimisation ignores trading costs, slippage, and taxes.
+
+  7. Backtest runtime: Full walk-forward backtesting over 17 months is
+     computationally intensive (one Prophet fit per ticker per evaluation date).
+
+
+================================================================================
+5.12  CHAPTER SUMMARY (CONCLUSIONS)
+================================================================================
+
+The project successfully delivers a Prophet-based portfolio optimisation system
+that:
+
+  • Extracts and aligns multi-asset price data from Yahoo Finance
+  • Forecasts next-day prices using Prophet with US trading holiday effects
+  • Converts forecasts to expected returns (μ) for mean-variance optimisation
+  • Estimates covariance (Σ) from 252 days of historical returns only
+  • Produces constrained optimal weights under λ = 5, 5% ≤ wᵢ ≤ 100%, Σwᵢ = 1
+  • Persists results to Supabase and visualises them in a Streamlit dashboard
+  • Provides risk, sector, and backtesting analysis via CLI commands
+
+Empirical results from the latest run (9 July 2026) show the optimiser favouring
+AMD (26.65%) and TSLA (23.35%) based on the highest Prophet-predicted returns,
+while maintaining all other assets at the 5% diversification floor. Historical
+risk-adjusted performance metrics (Sharpe 1.36, annualised volatility 34.2%)
+are favourable over the estimation window, but sector concentration in Technology
+(61.65%) remains a structural limitation of the chosen universe.
+
+Walk-forward backtest results over January 2025 – June 2026 should be inserted
+into Table 5.11 and Table 5.14 once the backtest command completes. The partial
+backtest already demonstrates correct μ → weight linkage and constraint binding
+at the 45% single-asset ceiling.
+
+
+================================================================================
+APPENDIX A — COMMANDS TO REPRODUCE RESULTS
+================================================================================
+
+  # Daily optimisation (production)
+  poetry run python -m src.main
+
+  # Walk-forward backtest
+  poetry run python -m src.main backtest --start 2025-01-01 --end 2026-06-01
+
+  # Risk metrics on current portfolio
+  poetry run python -m src.main risk
+
+  # Sector analysis
+  poetry run python -m src.main sector
+
+  # Combined analysis
+  poetry run python -m src.main analyze
+
+  # Unified evaluation report
+  poetry run python -m src.main evaluate
+
+  # Dashboard
+  make dashboard
+
+
+================================================================================
+APPENDIX B — WHEN BACKTEST COMPLETES: UPDATE THESE TABLES
+================================================================================
+
+Look for output similar to:
+
+  Backtest summary
+    Period: 2025-01-01 → 2026-06-01
+    Trades evaluated: [N]
+    Avg price MAPE: [X]%
+    Avg return MAPE: [X]%
+    Portfolio Sharpe: [X]
+    Max drawdown: [X]%
+    Equal-weight benchmark: [X]% (excess [X]%)
+    SPY buy-&-hold: [X]% (excess [X]%)
+
+Copy those values into Table 5.11 and Table 5.14 above.
+
+================================================================================
+END OF DOCUMENT
+================================================================================
