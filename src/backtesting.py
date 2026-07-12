@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 import numpy as np
@@ -228,59 +228,36 @@ class Backtester:
                 if not result:
                     continue
 
-                # Get actual next day price (if available)
-                next_date = test_date + timedelta(days=1)
+                # Get actual next trading day prices (never fall back to predictions)
+                from src.market_calendar import next_trading_day
+
+                as_of = test_date.date() if hasattr(test_date, "date") else test_date
+                target = next_trading_day(as_of)
                 try:
-                    next_actual = yf.download(
-                        " ".join(self.tickers),
-                        start=test_date,
-                        end=next_date,
-                        progress=False,
+                    actual_prices, actual_returns = self._fetch_actual_outcomes(
+                        as_of=as_of,
+                        target=target,
+                    )
+                    if not actual_prices or len(actual_prices) < len(self.tickers):
+                        continue
+
+                    comparative = self._comparative_metrics(
+                        result,
+                        actual_prices,
+                        actual_returns,
+                        training_start,
+                        test_date,
+                    )
+                    backtest_result = self._calculate_result(
+                        test_date.strftime("%Y-%m-%d"),
+                        result,
+                        actual_prices,
+                        actual_returns,
+                        comparative=comparative,
                     )
 
-                    if next_actual is not None and len(next_actual) >= 2:
-                        actual_prices = {}
-                        actual_returns = {}
-
-                        for ticker in self.tickers:
-                            if ticker in next_actual.columns:
-                                close_prices = (
-                                    next_actual[("Close", ticker)]
-                                    if isinstance(next_actual.columns, pd.MultiIndex)
-                                    else next_actual[ticker]
-                                    if ticker in next_actual.columns
-                                    else None
-                                )
-
-                                if close_prices is not None and len(close_prices) >= 2:
-                                    today_price = close_prices.iloc[0]
-                                    tomorrow_price = close_prices.iloc[1]
-                                    actual_prices[ticker] = tomorrow_price
-                                    actual_returns[ticker] = (
-                                        tomorrow_price - today_price
-                                    ) / today_price
-                            else:
-                                actual_prices[ticker] = result.get("predictions", {}).get(ticker, 0)
-                                actual_returns[ticker] = result["predicted_returns"].get(ticker, 0)
-
-                        # Calculate metrics
-                        comparative = self._comparative_metrics(
-                            result,
-                            actual_prices,
-                            actual_returns,
-                            training_start,
-                            test_date,
-                        )
-                        backtest_result = self._calculate_result(
-                            test_date.strftime("%Y-%m-%d"),
-                            result,
-                            actual_prices,
-                            actual_returns,
-                            comparative=comparative,
-                        )
-
-                        self.results.append(backtest_result)
-                        num_trades += 1
+                    self.results.append(backtest_result)
+                    num_trades += 1
                 except Exception:
                     continue
 
@@ -294,6 +271,78 @@ class Backtester:
             num_trades,
             include_benchmarks=True,
         )
+
+    def _close_series(self, frame: pd.DataFrame, ticker: str) -> pd.Series | None:
+        """Extract a Close price series for one ticker from a yfinance download."""
+        if frame is None or frame.empty:
+            return None
+        if isinstance(frame.columns, pd.MultiIndex):
+            if ("Close", ticker) in frame.columns:
+                series = frame[("Close", ticker)]
+            elif (ticker, "Close") in frame.columns:
+                series = frame[(ticker, "Close")]
+            else:
+                return None
+        elif "Close" in frame.columns:
+            series = frame["Close"]
+        elif ticker in frame.columns:
+            series = frame[ticker]
+        else:
+            return None
+        return series.dropna()
+
+    def _fetch_actual_outcomes(
+        self,
+        as_of: date,
+        target: date,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """
+        Download realised prices for ``as_of`` and the next trading day ``target``.
+
+        Returns empty dicts when either session is missing — callers must skip the date
+        rather than substituting predicted values (which zeroed MAPE previously).
+        """
+        import yfinance as yf
+
+        fetch_start = as_of - timedelta(days=5)
+        fetch_end = target + timedelta(days=3)
+        raw = yf.download(
+            " ".join(self.tickers),
+            start=fetch_start,
+            end=fetch_end,
+            progress=False,
+            auto_adjust=True,
+        )
+        if raw is None or raw.empty:
+            return {}, {}
+
+        actual_prices: dict[str, float] = {}
+        actual_returns: dict[str, float] = {}
+        as_of_ts = pd.Timestamp(as_of)
+        target_ts = pd.Timestamp(target)
+
+        for ticker in self.tickers:
+            closes = self._close_series(raw, ticker)
+            if closes is None or closes.empty:
+                continue
+            # Align timezone-naive index for comparison
+            idx = closes.index.tz_localize(None) if closes.index.tz is not None else closes.index
+            closes = closes.copy()
+            closes.index = idx
+
+            on_or_before = closes.loc[closes.index <= as_of_ts]
+            on_or_after_target = closes.loc[closes.index >= target_ts]
+            if on_or_before.empty or on_or_after_target.empty:
+                continue
+
+            today_price = float(on_or_before.iloc[-1])
+            tomorrow_price = float(on_or_after_target.iloc[0])
+            if today_price == 0:
+                continue
+            actual_prices[ticker] = tomorrow_price
+            actual_returns[ticker] = (tomorrow_price - today_price) / today_price
+
+        return actual_prices, actual_returns
 
     def _equal_weight_period_returns(self) -> list[float]:
         """Equal-weight portfolio returns for each evaluated backtest date."""

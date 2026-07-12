@@ -97,6 +97,8 @@ class TestEvaluationReport:
         report = build_report_from_stored_outcomes(rows)
         assert report.num_observations == 2
         assert report.price_mape > 0
+        assert report.price_rmse > 0
+        assert report.price_mae > 0
         assert report.start_date == "2024-01-02"
 
     def test_build_from_empty_outcomes(self) -> None:

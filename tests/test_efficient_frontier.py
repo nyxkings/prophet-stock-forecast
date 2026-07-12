@@ -249,8 +249,8 @@ class TestGenerateFrontier:
             num_points=20,
         )
         min_var = result.min_variance_portfolio
-        # Min variance should have lowest volatility
-        assert all(p.volatility >= min_var.volatility for p in result.frontier_points)
+        # Dedicated min-variance optimisation should beat or match the lambda sweep
+        assert all(p.volatility >= min_var.volatility - 1e-9 for p in result.frontier_points)
 
     def test_max_sharpe_portfolio_identified(self, sample_mean_returns, sample_cov_matrix):
         """Test that maximum Sharpe portfolio is correctly identified."""
@@ -260,8 +260,19 @@ class TestGenerateFrontier:
             num_points=20,
         )
         max_sharpe = result.max_sharpe_portfolio
-        # Max Sharpe should have highest Sharpe ratio
-        assert all(p.sharpe_ratio <= max_sharpe.sharpe_ratio for p in result.frontier_points)
+        # Dedicated max-Sharpe optimisation should beat or match the lambda sweep
+        assert all(p.sharpe_ratio <= max_sharpe.sharpe_ratio + 1e-9 for p in result.frontier_points)
+
+    def test_min_variance_and_max_sharpe_are_distinct(self, sample_mean_returns, sample_cov_matrix):
+        """Min-variance and max-Sharpe should generally differ on diverse assets."""
+        result = EfficientFrontier.generate_frontier(
+            sample_mean_returns,
+            sample_cov_matrix,
+            num_points=20,
+        )
+        min_var = result.min_variance_portfolio
+        max_sharpe = result.max_sharpe_portfolio
+        assert min_var.weights != max_sharpe.weights
 
     def test_frontier_result_to_dict(self, sample_mean_returns, sample_cov_matrix):
         """Test converting frontier result to dictionary."""
@@ -382,6 +393,47 @@ class TestPlotFrontier:
             assert hasattr(point, "volatility")
             assert hasattr(point, "expected_return")
             assert hasattr(point, "sharpe_ratio")
+
+
+class TestDedicatedOptimizations:
+    """Test standalone min-variance and max-Sharpe optimisations."""
+
+    def test_optimize_minimum_variance_respects_bounds(
+        self, sample_mean_returns, sample_cov_matrix
+    ):
+        weights = EfficientFrontier.optimize_minimum_variance(
+            sample_mean_returns,
+            sample_cov_matrix,
+            minimum_allocation=0.10,
+            maximum_allocation=0.35,
+        )
+        assert np.isclose(sum(weights.values()), 1.0)
+        assert all(0.10 <= w <= 0.35 for w in weights.values())
+
+    def test_optimize_maximum_sharpe_respects_bounds(
+        self, sample_mean_returns, sample_cov_matrix
+    ):
+        weights = EfficientFrontier.optimize_maximum_sharpe(
+            sample_mean_returns,
+            sample_cov_matrix,
+            minimum_allocation=0.10,
+            maximum_allocation=0.35,
+        )
+        assert np.isclose(sum(weights.values()), 1.0)
+        assert all(0.10 <= w <= 0.35 for w in weights.values())
+
+    def test_dedicated_optimizers_produce_different_portfolios(
+        self, sample_mean_returns, sample_cov_matrix
+    ):
+        min_var_weights = EfficientFrontier.optimize_minimum_variance(
+            sample_mean_returns,
+            sample_cov_matrix,
+        )
+        max_sharpe_weights = EfficientFrontier.optimize_maximum_sharpe(
+            sample_mean_returns,
+            sample_cov_matrix,
+        )
+        assert min_var_weights != max_sharpe_weights
 
 
 class TestFormatPortfolioWeights:

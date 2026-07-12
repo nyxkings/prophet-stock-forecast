@@ -36,7 +36,7 @@ from src.portfolio_analysis import (
     sector_analysis_to_records,
     weights_from_date_df,
 )
-from src.settings import SUPABASE_TABLE_NAME
+from src.settings import SUPABASE_TABLE_NAME, ticker_color, ticker_color_map
 
 # ============================================================================
 # METRICS CALCULATION FUNCTIONS
@@ -169,12 +169,39 @@ def _fetch_supabase_predictions() -> tuple[pd.DataFrame, str]:
         df["created_at"] = pd.to_datetime(df["created_at"])
 
     df = df.sort_values(["as_of_date", "created_at"], ascending=[True, False])
-    df = df.drop_duplicates(subset=["as_of_date", "ticker"], keep="first")
+    # One optimisation run per as_of_date: keep only the latest insert batch.
+    # Per-ticker dedupe alone is wrong when a later run has fewer tickers (e.g. Yahoo
+    # failures) — older same-day rows for missing tickers would still appear and
+    # make portfolio weights sum to > 100%.
+    df = _keep_latest_run_per_date(df)
 
     if "actual_prices_last_month" in df.columns:
         df["actual_prices_last_month"] = df["actual_prices_last_month"].apply(_parse_price_history)
 
     return df, "supabase"
+
+
+def _keep_latest_run_per_date(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only rows from the most recent save batch for each as_of_date."""
+    if df.empty:
+        return df
+    if "created_at" not in df.columns or "as_of_date" not in df.columns:
+        return df.drop_duplicates(subset=["as_of_date", "ticker"], keep="first")
+
+    parts: list[pd.DataFrame] = []
+    for _, group in df.groupby("as_of_date", sort=False):
+        latest = group["created_at"].max()
+        # Rows from one insert share nearly the same created_at; older same-day
+        # runs are excluded so weights still sum to ~1.0.
+        batch = group[group["created_at"] >= latest - pd.Timedelta(minutes=2)].copy()
+        batch = batch.sort_values("created_at", ascending=False).drop_duplicates(
+            subset=["ticker"], keep="first"
+        )
+        parts.append(batch)
+
+    if not parts:
+        return df.iloc[0:0].copy()
+    return pd.concat(parts, ignore_index=True)
 
 
 def load_supabase_predictions() -> pd.DataFrame:
@@ -387,11 +414,14 @@ def pie_chart(weights_df: pd.DataFrame):
     if total_weight <= 0:
         return None
 
+    color_map = ticker_color_map(chart_df["ticker"].astype(str).tolist())
     fig = px.pie(
         chart_df,
         names="ticker",
         values="portfolio_weight",
         hole=0.3,
+        color="ticker",
+        color_discrete_map=color_map,
     )
     fig.update_traces(textinfo="label+percent", hovertemplate="%{label}: %{value:.2f}")
     fig.update_layout(showlegend=True, legend_title_text="Ticker", height=360)
@@ -480,13 +510,14 @@ def create_returns_distribution(perf_df: pd.DataFrame, ticker: str) -> go.Figure
 
     data["error_pct"] = data["error_pct"] * 100
 
+    colour = ticker_color(ticker)
     fig = go.Figure()
     fig.add_trace(
         go.Histogram(
             x=data["error_pct"],
             name="Error Distribution",
             nbinsx=20,
-            marker=dict(color="rgba(31, 119, 180, 0.7)"),
+            marker=dict(color=colour, opacity=0.75),
             hovertemplate="Error Range: %{x:.1f}%<br>Count: %{y}<extra></extra>",
         )
     )
@@ -517,6 +548,8 @@ def create_cumulative_returns_chart(perf_df: pd.DataFrame, ticker: str) -> alt.C
         }
     )
 
+    # Actual uses the ticker's shared colour; Predicted uses a contrasting grey
+    ticker_hex = ticker_color(ticker)
     chart = (
         alt.Chart(long_df)
         .mark_line(point=True)
@@ -528,7 +561,7 @@ def create_cumulative_returns_chart(perf_df: pd.DataFrame, ticker: str) -> alt.C
             color=alt.Color(
                 "Type:N",
                 title="Type",
-                scale=alt.Scale(domain=["Actual", "Predicted"], range=["#1f77b4", "#ff7f0e"]),
+                scale=alt.Scale(domain=["Actual", "Predicted"], range=[ticker_hex, "#888888"]),
             ),
             tooltip=["Date:T", "Type:N", alt.Tooltip("Cumulative Return:Q", format=".2f")],
         )
@@ -545,7 +578,7 @@ def create_weight_history_chart(df: pd.DataFrame) -> go.Figure | None:
     df_sorted = df.sort_values("as_of_date")
 
     fig = go.Figure()
-    for ticker in df_sorted["ticker"].unique():
+    for ticker in sorted(df_sorted["ticker"].astype(str).unique()):
         ticker_data = df_sorted[df_sorted["ticker"] == ticker].sort_values("as_of_date")
         fig.add_trace(
             go.Scatter(
@@ -553,6 +586,8 @@ def create_weight_history_chart(df: pd.DataFrame) -> go.Figure | None:
                 y=ticker_data["portfolio_weight"],
                 name=ticker,
                 mode="lines+markers",
+                line=dict(color=ticker_color(ticker)),
+                marker=dict(color=ticker_color(ticker)),
                 hovertemplate="Date: %{x}<br>Weight: %{y:.2f}<extra></extra>",
             )
         )
@@ -719,7 +754,13 @@ def run_dashboard() -> None:
                 st.info("Weights are zero or missing for this date.")
             else:
                 st.plotly_chart(pie, use_container_width=True)
-                st.caption("Current portfolio allocation")
+                weight_sum = float(
+                    pd.to_numeric(date_df["portfolio_weight"], errors="coerce").sum()
+                )
+                st.caption(
+                    f"Current portfolio allocation "
+                    f"(weights sum to {weight_sum * 100:.1f}% · {len(date_df)} tickers)"
+                )
 
         with col2:
             summary_table = date_df[
@@ -827,6 +868,7 @@ def run_dashboard() -> None:
                 var_name="series",
                 value_name="price",
             )
+            ticker_hex = ticker_color(selected_ticker)
             line_chart_trend = (
                 alt.Chart(long_df_trend)
                 .mark_line(point=True)
@@ -838,7 +880,7 @@ def run_dashboard() -> None:
                         title="Series",
                         scale=alt.Scale(
                             domain=["actual_price", "predicted_price"],
-                            range=["#1f77b4", "#ff7f0e"],
+                            range=[ticker_hex, "#888888"],
                         ),
                         legend=alt.Legend(
                             labelExpr="datum.value == 'actual_price' ? 'Actual' : 'Predicted'"

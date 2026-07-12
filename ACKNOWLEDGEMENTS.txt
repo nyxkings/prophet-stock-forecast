@@ -1,0 +1,45 @@
+================================================================================
+ACKNOWLEDGEMENT
+Prophet Forecasting for Portfolio Optimisation
+Author: Chinda Ada
+================================================================================
+Copy-ready text for the Acknowledgements section of the project report.
+================================================================================
+
+
+ACKNOWLEDGEMENT
+
+
+All glory, honour, and adoration be unto God Almighty, the giver of life,
+wisdom, knowledge, and understanding. His infinite mercy, grace, and guidance
+sustained me throughout the course of this research work and my entire academic
+journey. Without His strength and favour, the successful completion of this
+project would not have been possible.
+
+I express my profound gratitude to the Department of Computer Science, Federal
+University of Technology, Akure, for providing a conducive academic environment
+and the necessary resources that facilitated the successful completion of this
+study. I am particularly grateful to the lecturers in the department whose
+dedication, knowledge, and mentorship have contributed immensely to my academic
+and personal development.
+
+My sincere appreciation goes to my project supervisor, Dr. Akinwonmi A.E, whose
+invaluable guidance, constructive criticisms, encouragement, and expert
+suggestions greatly contributed to the success of this research. His patience,
+support, and commitment throughout the various stages of this project are deeply
+appreciated.
+
+I am deeply indebted to my parents for their unwavering love, prayers,
+sacrifices, encouragement, and financial support throughout my education. Their
+belief in my abilities and constant motivation have been a major source of
+inspiration and strength.
+
+I also wish to appreciate my friends and classmates who provided useful
+suggestions, encouragement, and moral support during the course of this research.
+Their contributions, whether directly or indirectly, helped in making this
+project a success.
+
+
+================================================================================
+END
+================================================================================

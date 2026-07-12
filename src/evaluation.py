@@ -19,6 +19,9 @@ class EvaluationReport:
     end_date: str | None = None
     num_observations: int = 0
     price_mape: float = 0.0
+    price_rmse: float = 0.0
+    price_mae: float = 0.0
+    price_r2: float = 0.0
     return_mape: float = 0.0
     portfolio_sharpe: float = 0.0
     portfolio_volatility: float = 0.0
@@ -44,6 +47,9 @@ class EvaluationReport:
             f"- Period: {self.start_date or 'n/a'} → {self.end_date or 'n/a'}",
             f"- Observations: {self.num_observations}",
             f"- Price MAPE: {self.price_mape:.2f}%",
+            f"- Price RMSE: ${self.price_rmse:.2f}",
+            f"- Price MAE: ${self.price_mae:.2f}",
+            f"- Price R²: {self.price_r2:.4f}",
             f"- Return MAPE: {self.return_mape:.4f}",
             f"- Portfolio Sharpe: {self.portfolio_sharpe:.2f}",
             f"- Volatility: {self.portfolio_volatility:.4f}",
@@ -181,6 +187,8 @@ def build_report_from_stored_outcomes(
 
     price_errors: list[float] = []
     return_errors: list[float] = []
+    predicted_prices: list[float] = []
+    actual_prices: list[float] = []
     dates: list[str] = []
 
     for row in rows:
@@ -195,10 +203,23 @@ def build_report_from_stored_outcomes(
         if predicted_price is not None and actual_price is not None:
             pred_p = float(predicted_price)
             act_p = float(actual_price)
+            predicted_prices.append(pred_p)
+            actual_prices.append(act_p)
             if act_p != 0:
                 price_errors.append(abs(pred_p - act_p) / abs(act_p) * 100)
         if predicted_return is not None and actual_return is not None:
             return_errors.append(abs(float(predicted_return) - float(actual_return)))
+
+    pred_arr = np.array(predicted_prices)
+    act_arr = np.array(actual_prices)
+    price_rmse = float(np.sqrt(np.mean((act_arr - pred_arr) ** 2))) if len(act_arr) else 0.0
+    price_mae = float(np.mean(np.abs(act_arr - pred_arr))) if len(act_arr) else 0.0
+    if len(act_arr) > 1:
+        ss_res = float(np.sum((act_arr - pred_arr) ** 2))
+        ss_tot = float(np.sum((act_arr - np.mean(act_arr)) ** 2))
+        price_r2 = 1.0 - ss_res / ss_tot if ss_tot else 0.0
+    else:
+        price_r2 = 0.0
 
     return EvaluationReport(
         source=source,
@@ -206,6 +227,9 @@ def build_report_from_stored_outcomes(
         end_date=max(dates) if dates else None,
         num_observations=len(rows),
         price_mape=float(np.mean(price_errors)) if price_errors else 0.0,
+        price_rmse=price_rmse,
+        price_mae=price_mae,
+        price_r2=price_r2,
         return_mape=float(np.mean(return_errors)) if return_errors else 0.0,
         notes=["Portfolio Sharpe/volatility require walk-forward series; use backtest for those."],
     )

@@ -1,0 +1,60 @@
+{
+  "source": "comparative",
+  "start_date": "2025-01-01",
+  "end_date": "2026-06-01",
+  "num_observations": 73,
+  "price_mape": 3.911878701274931,
+  "price_rmse": 0.0,
+  "price_mae": 0.0,
+  "price_r2": 0.0,
+  "return_mape": 0.032463403987392364,
+  "portfolio_sharpe": -3.063212352479537,
+  "portfolio_volatility": 0.3116226635870783,
+  "portfolio_max_drawdown": -0.3031404795836361,
+  "cumulative_actual_return": -0.25278606479862176,
+  "cumulative_predicted_return": 4.222653532494956,
+  "benchmarks": {
+    "equal_weight": -0.24857459248663039,
+    "buy_and_hold_equal_weight": -0.24349990107704192,
+    "spy": 0.312694345302944
+  },
+  "excess_returns": {
+    "equal_weight": -0.004211472311991371,
+    "buy_and_hold_equal_weight": -0.009286163721579838,
+    "spy": -0.5654804101015658
+  },
+  "forecast_comparison": {
+    "prophet": 3.911878701274931,
+    "naive_random_walk": 2.700156440459954,
+    "drift_historical_mean": 2.7079207138857226
+  },
+  "strategy_comparison": {
+    "prophet_mpt": {
+      "cumulative_return": -0.25278606479862176,
+      "sharpe_ratio": -3.0632123524795376,
+      "excess_vs_equal_weight": -0.004211472311991371,
+      "win_rate_vs_equal_weight": 0.4520547945205479
+    },
+    "historical_mean_mpt": {
+      "cumulative_return": -0.24824044924073885,
+      "sharpe_ratio": -2.78348187317072,
+      "excess_vs_equal_weight": 0.0003341432458915383,
+      "win_rate_vs_equal_weight": 0.4794520547945205
+    },
+    "equal_weight": {
+      "cumulative_return": -0.24857459248663039,
+      "sharpe_ratio": -3.5933261181449083,
+      "excess_vs_equal_weight": 0.0,
+      "win_rate_vs_equal_weight": 0.0
+    }
+  },
+  "statistical_summary": {
+    "prophet_mape_improvement_vs_naive_pp": -1.2117222608149771,
+    "prophet_win_rate_vs_naive": 0.1643835616438356,
+    "prophet_win_rate_vs_drift": 0.1643835616438356,
+    "strategy_win_rate_vs_equal_weight": 0.4520547945205479,
+    "strategy_win_rate_vs_historical_mpt": 0.4520547945205479,
+    "excess_return_vs_historical_mpt": -0.004545615557882909
+  },
+  "notes": []
+}

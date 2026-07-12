@@ -1,0 +1,60 @@
+{
+  "source": "comparative",
+  "start_date": "2025-12-01",
+  "end_date": "2026-02-01",
+  "num_observations": 9,
+  "price_mape": 5.627308748922035,
+  "price_rmse": 0.0,
+  "price_mae": 0.0,
+  "price_r2": 0.0,
+  "return_mape": 0.0541399693821368,
+  "portfolio_sharpe": -1.941854608670113,
+  "portfolio_volatility": 0.17962599661800324,
+  "portfolio_max_drawdown": -0.03579155877896438,
+  "cumulative_actual_return": -0.012965434809591225,
+  "cumulative_predicted_return": 0.5324834395240678,
+  "benchmarks": {
+    "equal_weight": -0.008278304761280553,
+    "buy_and_hold_equal_weight": -0.00822913747730363,
+    "spy": 0.02020469943675404
+  },
+  "excess_returns": {
+    "equal_weight": -0.004687130048310673,
+    "buy_and_hold_equal_weight": -0.004736297332287595,
+    "spy": -0.03317013424634527
+  },
+  "forecast_comparison": {
+    "prophet": 5.627308748922035,
+    "naive_random_walk": 1.9387755743133488,
+    "drift_historical_mean": 1.9686413779847218
+  },
+  "strategy_comparison": {
+    "prophet_mpt": {
+      "cumulative_return": -0.012965434809591225,
+      "sharpe_ratio": -1.9418546086701132,
+      "excess_vs_equal_weight": -0.004687130048310673,
+      "win_rate_vs_equal_weight": 0.3333333333333333
+    },
+    "historical_mean_mpt": {
+      "cumulative_return": 0.0008583971320839101,
+      "sharpe_ratio": 0.23487082827080685,
+      "excess_vs_equal_weight": 0.009136701893364463,
+      "win_rate_vs_equal_weight": 0.5555555555555556
+    },
+    "equal_weight": {
+      "cumulative_return": -0.008278304761280553,
+      "sharpe_ratio": -1.4322067888764314,
+      "excess_vs_equal_weight": 0.0,
+      "win_rate_vs_equal_weight": 0.0
+    }
+  },
+  "statistical_summary": {
+    "prophet_mape_improvement_vs_naive_pp": -3.6885331746086862,
+    "prophet_win_rate_vs_naive": 0.0,
+    "prophet_win_rate_vs_drift": 0.0,
+    "strategy_win_rate_vs_equal_weight": 0.3333333333333333,
+    "strategy_win_rate_vs_historical_mpt": 0.3333333333333333,
+    "excess_return_vs_historical_mpt": -0.013823831941675135
+  },
+  "notes": []
+}

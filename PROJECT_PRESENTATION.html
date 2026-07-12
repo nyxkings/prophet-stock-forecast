@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prophet Forecasting for Portfolio Optimisation</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a222c;
+      --text: #e8eef4;
+      --muted: #8b9aab;
+      --accent: #2dd4bf;
+      --accent-dim: #0d9488;
+      --line: #2a3644;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    }
+    .deck {
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+    .slide {
+      display: none;
+      height: 100%;
+      padding: 4.5rem 5.5rem 3.5rem;
+      flex-direction: column;
+      justify-content: center;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .slide.active { display: flex; }
+    .slide.title-slide {
+      text-align: center;
+      align-items: center;
+      max-width: 900px;
+    }
+    h1 {
+      font-size: 2.6rem;
+      font-weight: 650;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-size: 1.85rem;
+      font-weight: 600;
+      margin-bottom: 1.6rem;
+      color: var(--accent);
+      letter-spacing: -0.01em;
+    }
+    .subtitle {
+      margin-top: 1.25rem;
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 36rem;
+      line-height: 1.5;
+    }
+    .meta {
+      margin-top: 2.5rem;
+      font-size: 0.95rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .meta strong { color: var(--text); font-weight: 560; }
+    p, li {
+      font-size: 1.12rem;
+      line-height: 1.55;
+      color: var(--text);
+    }
+    ul { list-style: none; }
+    ul li {
+      position: relative;
+      padding-left: 1.15rem;
+      margin-bottom: 0.7rem;
+    }
+    ul li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.62em;
+      width: 0.4rem;
+      height: 0.4rem;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 1.15rem 1.25rem;
+    }
+    .card h3 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.55rem;
+      font-weight: 600;
+    }
+    .card .value {
+      font-size: 1.85rem;
+      font-weight: 650;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+    .card .note {
+      margin-top: 0.35rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem;
+      margin-top: 0.5rem;
+    }
+    .chip {
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 0.55rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+    .arrow { color: var(--accent-dim); font-size: 1.1rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.4rem;
+      font-size: 1.02rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      color: var(--muted);
+      font-weight: 560;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td.num { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+    .formula {
+      margin-top: 1rem;
+      background: var(--card);
+      border-left: 3px solid var(--accent);
+      padding: 1rem 1.2rem;
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 1.05rem;
+      color: var(--text);
+    }
+    .footer-bar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      background: rgba(15, 20, 25, 0.92);
+      border-top: 1px solid var(--line);
+      font-size: 0.8rem;
+      color: var(--muted);
+      z-index: 10;
+    }
+    .progress {
+      height: 3px;
+      background: var(--line);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 11;
+    }
+    .progress > span {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.2s ease;
+    }
+    .hint { opacity: 0.75; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      background: rgba(45, 212, 191, 0.12);
+      color: var(--accent);
+      border: 1px solid rgba(45, 212, 191, 0.35);
+    }
+    .badge.partial {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--warn);
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+    .small { font-size: 0.95rem; color: var(--muted); margin-top: 1.2rem; }
+    @media (max-width: 800px) {
+      .slide { padding: 3rem 1.5rem 4rem; }
+      h1 { font-size: 1.8rem; }
+      h2 { font-size: 1.4rem; }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress"><span id="bar"></span></div>
+  <div class="deck" id="deck">
+
+    <!-- 1 -->
+    <section class="slide title-slide active">
+      <h1>Prophet Forecasting for<br/>Portfolio Optimisation</h1>
+      <p class="subtitle">
+        Combining Meta Prophet time-series forecasts with Modern Portfolio Theory
+        to recommend risk-aware equity allocations.
+      </p>
+      <div class="meta">
+        <strong>Chinda Ada</strong><br/>
+        Department of Computer Science<br/>
+        Federal University of Technology, Akure<br/>
+        Supervisor: Dr. Akinwonmi A.E
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide">
+      <h2>Research objectives</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Objective (a)</h3>
+          <p>Design a model for predicting asset price movement using <strong>Prophet forecasting</strong> and <strong>Modern Portfolio Theory (MPT)</strong>.</p>
+        </div>
+        <div class="card">
+          <h3>Objective (b)</h3>
+          <p>Implement and evaluate the system so investors can select a <strong>best combination of investments</strong> that balances expected return with market risk.</p>
+        </div>
+      </div>
+      <p class="small">Portfolio universe: 12 US equities — AMD, MSFT, AAPL, TSLA, AMZN, NVDA, META, GOOG, TSM, JPM, NFLX, PLTR.</p>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide">
+      <h2>The problem</h2>
+      <ul>
+        <li>Investors need forecasts <em>and</em> a disciplined way to turn forecasts into weights.</li>
+        <li>Raw predicted returns alone ignore correlation and portfolio risk.</li>
+        <li>Equal-weight or gut-feel allocations do not exploit forecast information systematically.</li>
+      </ul>
+      <div class="formula" style="margin-top:1.6rem">
+        Solution: μ from Prophet · Σ from history · optimise Markowitz utility
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide">
+      <h2>System pipeline</h2>
+      <div class="flow">
+        <span class="chip">yfinance</span><span class="arrow">→</span>
+        <span class="chip">Preprocess</span><span class="arrow">→</span>
+        <span class="chip">Prophet</span><span class="arrow">→</span>
+        <span class="chip">MPT optimiser</span><span class="arrow">→</span>
+        <span class="chip">Supabase</span><span class="arrow">→</span>
+        <span class="chip">Streamlit UI</span>
+      </div>
+      <ul style="margin-top:1.8rem">
+        <li>Next-day price forecasts with US holiday effects</li>
+        <li>Expected returns μ = (P̂ − P₀) / P₀</li>
+        <li>Covariance Σ from last 252 trading days only</li>
+        <li>Constraints: weights sum to 1; 5% ≤ wᵢ ≤ 100%; λ = 5</li>
+        <li>Daily automation via GitHub Actions; live dashboard for analysis</li>
+      </ul>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide">
+      <h2>How investors get the “best combination”</h2>
+      <p style="margin-bottom:1.2rem;color:var(--muted)">Shown in the Streamlit dashboard · Overview tab</p>
+      <ul>
+        <li><strong>Pie chart + Weight (%)</strong> — recommended allocation from Markowitz optimisation</li>
+        <li><strong>Return (%)</strong> — Prophet forecast signal per ticker</li>
+        <li><strong>Efficient Frontier</strong> — min-variance vs max-Sharpe alternatives</li>
+        <li><strong>Risk &amp; sector tabs</strong> — VaR, CVaR, Sharpe, diversification</li>
+      </ul>
+      <div class="formula">
+        Maximise: μᵀw − (λ/2) wᵀΣw &nbsp;|&nbsp; Σwᵢ = 1, &nbsp; wᵢ ≥ 0.05
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide">
+      <h2>Forecast accuracy (production)</h2>
+      <p class="small" style="margin-top:0;margin-bottom:1.2rem">Stored outcomes · 121 scored rows · 6–9 Jul 2026</p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Price MAPE</h3>
+          <div class="value">4.31%</div>
+          <div class="note">Target: &lt; 5% (acceptable)</div>
+        </div>
+        <div class="card">
+          <h3>R²</h3>
+          <div class="value">0.989</div>
+          <div class="note">Strong price-level fit</div>
+        </div>
+        <div class="card">
+          <h3>RMSE</h3>
+          <div class="value">$15.53</div>
+          <div class="note">Across large-cap price levels</div>
+        </div>
+        <div class="card">
+          <h3>MAE</h3>
+          <div class="value">$12.80</div>
+          <div class="note">Mean absolute price error</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide">
+      <h2>Implementation verification</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Automated tests</h3>
+          <div class="value">273 / 274</div>
+          <div class="note">99.6% pass rate (Jul 2026)</div>
+        </div>
+        <div class="card">
+          <h3>Overall coverage</h3>
+          <div class="value">66.7%</div>
+          <div class="note">Target ≥ 50% — exceeded</div>
+        </div>
+      </div>
+      <ul style="margin-top:1.5rem">
+        <li>Prophet μ correctly fed into the optimiser</li>
+        <li>Σ never contaminated by forecast values</li>
+        <li>Weights always sum to 1.0 and respect bounds</li>
+        <li>Outcomes scored and persisted for evaluation</li>
+      </ul>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide">
+      <h2>Objective alignment</h2>
+      <table>
+        <thead>
+          <tr><th>Objective</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>(a) Design Prophet + MPT framework</td><td><span class="badge">Achieved</span></td></tr>
+          <tr><td>(b) Implement end-to-end system</td><td><span class="badge">Achieved</span></td></tr>
+          <tr><td>(c) Evaluate forecast accuracy</td><td><span class="badge partial">Partial / in progress</span></td></tr>
+          <tr><td>(d) Evaluate portfolio risk</td><td><span class="badge">Achieved</span></td></tr>
+          <tr><td>(e) Sector / diversification analysis</td><td><span class="badge">Achieved</span></td></tr>
+          <tr><td>(f) Persist &amp; visualise (Supabase + UI)</td><td><span class="badge">Achieved</span></td></tr>
+          <tr><td>(g) Benchmark vs passive strategies</td><td><span class="badge">Framework ready</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 9 -->
+    <section class="slide">
+      <h2>Limitations</h2>
+      <ul>
+        <li>One-day-ahead forecasts only — not multi-horizon</li>
+        <li>5% floor on 12 assets shrinks the feasible set (corner solutions common)</li>
+        <li>Technology sector can dominate despite asset-level floors</li>
+        <li>No transaction costs, taxes, or slippage in the optimiser</li>
+        <li>Full walk-forward backtests are computationally heavy (Prophet × 12 × many dates)</li>
+        <li>Illustrative research system — not financial advice</li>
+      </ul>
+    </section>
+
+    <!-- 10 -->
+    <section class="slide">
+      <h2>Conclusions</h2>
+      <ul>
+        <li>Delivered a working Prophet + MPT pipeline from data to dashboard</li>
+        <li>Production short-horizon MAPE of <strong>4.31%</strong> meets the &lt;5% threshold</li>
+        <li>Investors see a concrete recommended mix via optimal weights in the UI</li>
+        <li>Risk, sector, and evaluation tooling support transparent decision support</li>
+        <li>Remaining work: complete corrected full walk-forward compare for Table 5.11</li>
+      </ul>
+    </section>
+
+    <!-- 11 -->
+    <section class="slide title-slide">
+      <h1>Thank you</h1>
+      <p class="subtitle">Questions welcome.</p>
+      <div class="meta">
+        <strong>Prophet Forecasting for Portfolio Optimisation</strong><br/>
+        Chinda Ada · FUTA · Computer Science<br/>
+        Live app: portfolio-optimisation.com
+      </div>
+    </section>
+
+  </div>
+
+  <div class="footer-bar">
+    <span>Prophet + MPT Portfolio Project</span>
+    <span class="hint">← → or click · F for fullscreen</span>
+    <span id="counter">1 / 11</span>
+  </div>
+
+  <script>
+    const slides = [...document.querySelectorAll(".slide")];
+    const counter = document.getElementById("counter");
+    const bar = document.getElementById("bar");
+    let i = 0;
+
+    function show(n) {
+      i = Math.max(0, Math.min(slides.length - 1, n));
+      slides.forEach((s, idx) => s.classList.toggle("active", idx === i));
+      counter.textContent = `${i + 1} / ${slides.length}`;
+      bar.style.width = `${((i + 1) / slides.length) * 100}%`;
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (["ArrowRight", " ", "PageDown", "Enter"].includes(e.key)) {
+        e.preventDefault();
+        show(i + 1);
+      } else if (["ArrowLeft", "PageUp", "Backspace"].includes(e.key)) {
+        e.preventDefault();
+        show(i - 1);
+      } else if (e.key === "Home") show(0);
+      else if (e.key === "End") show(slides.length - 1);
+      else if (e.key.toLowerCase() === "f") {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+      }
+    });
+
+    document.getElementById("deck").addEventListener("click", (e) => {
+      if (e.clientX > window.innerWidth * 0.55) show(i + 1);
+      else show(i - 1);
+    });
+
+    show(0);
+  </script>
+</body>
+</html>

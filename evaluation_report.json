@@ -1,26 +1,24 @@
 {
-  "source": "smoke",
-  "start_date": "2024-01-01",
-  "end_date": "2024-01-31",
-  "num_observations": 5,
-  "price_mape": 1.25,
-  "return_mape": 0.012,
-  "portfolio_sharpe": 1.0,
-  "portfolio_volatility": 0.15,
-  "portfolio_max_drawdown": -0.05,
-  "cumulative_actual_return": 0.02,
-  "cumulative_predicted_return": 0.025,
-  "benchmarks": {
-    "equal_weight": 0.015,
-    "buy_and_hold_equal_weight": 0.014,
-    "spy": 0.01
-  },
-  "excess_returns": {
-    "equal_weight": 0.005,
-    "buy_and_hold_equal_weight": 0.006,
-    "spy": 0.01
-  },
+  "source": "stored_outcomes",
+  "start_date": "2026-07-06",
+  "end_date": "2026-07-09",
+  "num_observations": 121,
+  "price_mape": 4.312993385614413,
+  "price_rmse": 15.533425723799452,
+  "price_mae": 12.80458732530497,
+  "price_r2": 0.9893238636431011,
+  "return_mape": 0.04331654338596543,
+  "portfolio_sharpe": 0.0,
+  "portfolio_volatility": 0.0,
+  "portfolio_max_drawdown": 0.0,
+  "cumulative_actual_return": 0.0,
+  "cumulative_predicted_return": 0.0,
+  "benchmarks": {},
+  "excess_returns": {},
+  "forecast_comparison": {},
+  "strategy_comparison": {},
+  "statistical_summary": {},
   "notes": [
-    "Synthetic smoke report; not live market performance."
+    "Portfolio Sharpe/volatility require walk-forward series; use backtest for those."
   ]
 }

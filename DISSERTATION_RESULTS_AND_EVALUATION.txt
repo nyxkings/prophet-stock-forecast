@@ -225,7 +225,7 @@ Table 5.7 — Portfolio risk metrics (historical weighted returns)
 | Sharpe ratio (annualised) |         1.36 | Favourable risk-adjusted return         |
 | Sortino ratio (annualised)|         2.09 | Strong downside-risk-adjusted return     |
 | Volatility (annualised)   |        0.342 | ~34.2% annualised portfolio volatility  |
-| Maximum drawdown          |      −32.94% | Largest peak-to-trough decline          |
+| Maximum drawdown          | -30.31%            | Largest peak-to-trough decline          |
 | Calmar ratio              |         1.47 | Return relative to max drawdown         |
 | Skewness                  |         0.69 | Slightly right-skewed return distribution|
 | Excess kurtosis           |         7.93 | Fat tails — extreme moves more likely   |
@@ -293,7 +293,12 @@ A walk-forward backtest was executed over the period 1 January 2025 to
   5. Compared predictions and portfolio returns to realised outcomes
 
 Command used:
-  poetry run python -m src.main backtest --start 2025-01-01 --end 2026-06-01
+  poetry run python -m src.main compare --start 2025-01-01 --end 2026-06-01 \
+    --output comparative_evaluation.json
+
+Per-date CSV (optional):
+  poetry run python -m src.main backtest --start 2025-01-01 --end 2026-06-01 \
+    --output backtest_report.csv --evaluation-output evaluation_report.json
 
 Table 5.11 — Walk-forward backtest summary
 --------------------------------------------------------------------------------
@@ -301,24 +306,38 @@ Table 5.11 — Walk-forward backtest summary
 |-------------------------------------|--------------------|----------------------|
 | Backtest period                     | 2025-01-01 to      |                      |
 |                                     | 2026-06-01         |                      |
-| Status at time of writing           | IN PROGRESS        | Update when complete |
-| Avg. price MAPE (%)                 | [see CSV output]   | backtest_report.csv  |
-| Avg. return MAPE                    | [see CSV output]   |                      |
-| Portfolio Sharpe ratio              | [see JSON output]  | evaluation_report.json|
-| Portfolio volatility (annualised)   | [see JSON output]  |                      |
-| Maximum drawdown                    | [see JSON output]  |                      |
-| Cumulative actual return            | [see JSON output]  |                      |
-| Cumulative predicted return         | [see JSON output]  |                      |
-| Equal-weight benchmark return       | [see JSON output]  |                      |
-| SPY buy-and-hold return             | [see JSON output]  |                      |
-| Excess return vs equal-weight       | [see JSON output]  |                      |
-| Excess return vs SPY                | [see JSON output]  |                      |
+| Status at time of writing           | COMPLETE           | Corrected run 11 Jul 2026 |
+| Evaluation dates sampled            | Every 5 business   | 73 walk-forward steps|
+|                                     | days               |                      |
+| Avg. price MAPE (%)                 | 3.91%              | comparative_evaluation.json |
+| Avg. return MAPE                    | 0.0325             |                      |
+| Portfolio Sharpe ratio              | -3.06              | comparative_evaluation.json |
+| Portfolio volatility (annualised)   | 0.3116             |                      |
+| Maximum drawdown                    | -30.31%            |                      |
+| Cumulative actual return            | -25.28%            |                      |
+| Cumulative predicted return         | 422.27%            | predicted path only  |
+| Equal-weight benchmark return       | -24.86%            |                      |
+| SPY buy-and-hold return             | 31.27%             |                      |
+| Excess return vs equal-weight       | -0.42%             |                      |
+| Excess return vs SPY                | -56.55%            |                      |
+| Prophet MAPE vs naive random walk   | Prophet 3.91% vs   | naive better on MAPE |
+|                                     | naive 2.70%        |                      |
+| Prophet-MPT vs historical-μ MPT     | -25.28% vs -24.82% | similar; both weak   |
+|                                     | Sharpe -3.06 vs    | vs SPY +31.27%       |
+|                                     | -2.78              |                      |
 --------------------------------------------------------------------------------
 
-NOTE: When the backtest completes, replace the [see output] placeholders with
-values printed at the end of the backtest run and saved to:
-  • backtest_report.csv        (per-date results)
-  • evaluation_report.json     (aggregate summary)
+NOTE: Table 5.11 filled from corrected comparative_evaluation.json (73 dates,
+Jan 2025 – Jun 2026). An earlier run reported 0% MAPE because yfinance
+MultiIndex Close columns were mis-parsed; that bug is fixed in
+src/backtesting.py (_fetch_actual_outcomes). Second CSV backtest was skipped
+by design. Table 5.14 remains production stored outcomes (MAPE 4.31%, n=121).
+
+Honest reading of Table 5.11: Prophet one-step price MAPE (3.91%) is usable
+but worse than naive/drift (~2.7%). Prophet-MPT cumulative actual return
+(-25.28%) is close to equal-weight (-24.86%) and far behind SPY (+31.27%).
+Predicted cumulative return (422%) is not a realised investor outcome — it
+reflects optimistic forecast paths, not traded P&L.
 
 Table 5.12 — Observed backtest behaviour (partial run, sample dates)
 --------------------------------------------------------------------------------
@@ -358,18 +377,27 @@ Table 5.13 — Forecast accuracy metrics and interpretation
 | R²     | 0 to 1       | >0.8 strong explanatory| <0.5 weak vs mean       |
 --------------------------------------------------------------------------------
 
-Populate Table 5.14 with dashboard or backtest output for your final submission.
+NOTE: Table 5.11 values below were filled from comparative_evaluation.json
+(comparative_evaluation.json). Observations: 73.
 
-Table 5.14 — Forecast accuracy results (populate from backtest / dashboard)
+Table 5.14 — Forecast accuracy results (production stored outcomes, Jul 2026)
 --------------------------------------------------------------------------------
-| Metric              | Value    | Source                        |
-|---------------------|----------|-------------------------------|
-| Overall price MAPE  | [TBD] %  | backtest or Streamlit dashboard|
-| Overall RMSE        | [TBD] $  | Streamlit dashboard           |
-| Overall MAE         | [TBD] $  | Streamlit dashboard           |
-| R²                  | [TBD]    | Report calculation            |
-| Avg. return MAPE    | [TBD]    | backtest_report.csv           |
+| Metric              | Value      | Source                        |
+|---------------------|------------|-------------------------------|
+| Overall price MAPE  | 4.31 %     | evaluate --mode stored        |
+| Overall RMSE        | $15.53     | evaluate --mode stored        |
+| Overall MAE         | $12.80     | evaluate --mode stored        |
+| R²                  | 0.9893     | evaluate --mode stored        |
+| Avg. return MAPE    | 0.0433     | evaluate --mode stored        |
+| Scored observations | 121        | Supabase (2026-07-06 to 09)   |
 --------------------------------------------------------------------------------
+
+Interpretation: Production one-step price forecasts over four trading days
+(121 ticker-level scored rows) achieved MAPE below 5%, indicating acceptable
+short-horizon accuracy for the dissertation threshold in Table 5.13. R² is
+high because predicted and actual prices share the same price level scale
+across large-cap names; walk-forward backtest MAPE (Table 5.11) is the
+stronger out-of-sample test.
 
 
 ================================================================================
@@ -382,18 +410,17 @@ Table 5.15 — Research objective vs achieved result
 |------------------------------------------------|-------------------------|----------|
 | (a) Design Prophet + MPT framework             | Achieved                | Pipeline |
 |                                                |                         | in main  |
-| (b) Implement end-to-end system                | Achieved                | 148/148  |
-|                                                |                         | tests    |
-| (c) Evaluate forecast accuracy                 | Partially achieved      | Metrics  |
-|                                                |                         | exist;   |
-|                                                |                         | backtest |
-|                                                |                         | running  |
+| (b) Implement end-to-end system                | Achieved                | 288 tests|
+|                                                |                         | passing  |
+| (c) Evaluate forecast accuracy                 | Partially achieved      | Stored   |
+|                                                |                         | MAPE 4.31%|
+|                                                |                         | + backtest|
 | (d) Evaluate portfolio risk                    | Achieved                | Table 5.7|
 | (e) Sector / diversification analysis          | Achieved                | Table 5.9|
 | (f) Persist and visualise results              | Achieved                | Supabase |
 |                                                |                         | dashboard|
-| (g) Benchmark against passive strategies       | Framework ready         | Backtest |
-|                                                |                         | output   |
+| (g) Benchmark against passive strategies       | Achieved (results)      | Table 5.11|
+|                                                |                         | compare  |
 --------------------------------------------------------------------------------
 
 

@@ -465,3 +465,36 @@ class TestBacktestingEdgeCases:
 
         # Should handle missing MSFT gracefully
         assert result.price_mape >= 0
+
+
+class TestActualOutcomeFetch:
+    """Regression: MultiIndex yfinance frames must yield real prices, not predictions."""
+
+    def test_close_series_from_multiindex(self) -> None:
+        import pandas as pd
+
+        bt = Backtester(tickers=["AAPL", "MSFT"])
+        idx = pd.to_datetime(["2025-01-02", "2025-01-03"])
+        cols = pd.MultiIndex.from_product([["Close"], ["AAPL", "MSFT"]])
+        frame = pd.DataFrame(
+            [[100.0, 200.0], [101.0, 202.0]],
+            index=idx,
+            columns=cols,
+        )
+        aapl = bt._close_series(frame, "AAPL")
+        assert aapl is not None
+        assert float(aapl.iloc[-1]) == 101.0
+
+    def test_calculate_result_nonzero_mape_when_prices_differ(self) -> None:
+        bt = Backtester(tickers=["AAPL"])
+        result = bt._calculate_result(
+            "2025-01-02",
+            {
+                "predictions": {"AAPL": 100.0},
+                "predicted_returns": {"AAPL": 0.01},
+                "weights": {"AAPL": 1.0},
+            },
+            actual_prices={"AAPL": 110.0},
+            actual_returns={"AAPL": 0.02},
+        )
+        assert result.price_mape > 0

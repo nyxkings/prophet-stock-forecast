@@ -54,6 +54,53 @@ class EfficientFrontier:
     """Generate and analyze efficient frontier."""
 
     @staticmethod
+    def _optimize_weights(
+        mean_returns: pd.Series,
+        objective,
+        minimum_allocation: float = 0.05,
+        maximum_allocation: float = 1.0,
+    ) -> dict[str, float]:
+        """Run constrained weight optimisation (weights sum to 1)."""
+        tickers = list(mean_returns.index)
+        num_assets = len(tickers)
+
+        if num_assets == 0:
+            raise ValueError("Cannot optimize empty portfolio")
+
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
+        bounds = tuple((minimum_allocation, maximum_allocation) for _ in range(num_assets))
+        initial_weights = np.array([1 / num_assets] * num_assets)
+
+        result = minimize(
+            objective, initial_weights, method="SLSQP", bounds=bounds, constraints=constraints
+        )
+
+        if not result.success:
+            return {ticker: 1 / num_assets for ticker in tickers}
+
+        return {ticker: float(w) for ticker, w in zip(tickers, result.x, strict=True)}
+
+    @staticmethod
+    def _portfolio_point_from_weights(
+        weights: dict[str, float],
+        mean_returns: pd.Series,
+        cov_matrix: pd.DataFrame,
+        risk_free_rate: float,
+        risk_aversion: float = 0.0,
+    ) -> PortfolioPoint:
+        """Build a PortfolioPoint from optimised weights."""
+        volatility, exp_return, sharpe = EfficientFrontier.calculate_portfolio_metrics(
+            weights, mean_returns, cov_matrix, risk_free_rate
+        )
+        return PortfolioPoint(
+            risk_aversion=risk_aversion,
+            volatility=volatility,
+            expected_return=exp_return,
+            sharpe_ratio=sharpe,
+            weights=weights,
+        )
+
+    @staticmethod
     def optimize_portfolio(
         mean_returns: pd.Series,
         cov_matrix: pd.DataFrame,
@@ -76,37 +123,61 @@ class EfficientFrontier:
         Raises:
             ValueError: If portfolio is empty or invalid
         """
-        tickers = list(mean_returns.index)
-        num_assets = len(tickers)
-
-        if num_assets == 0:
-            raise ValueError("Cannot optimize empty portfolio")
-
         # Objective: minimise -(return - (lambda/2) * variance)
         def objective(weights: np.ndarray) -> float:
             port_return = float(np.dot(weights, mean_returns))
             port_var = float(np.dot(weights.T, np.dot(cov_matrix, weights)))
             return -(port_return - 0.5 * risk_aversion * port_var)
 
-        # Constraint: sum(weights) == 1
-        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
-
-        # Bounds
-        bounds = tuple((minimum_allocation, maximum_allocation) for _ in range(num_assets))
-
-        # Initial guess: equal weights
-        initial_weights = np.array([1 / num_assets] * num_assets)
-
-        # Optimize
-        result = minimize(
-            objective, initial_weights, method="SLSQP", bounds=bounds, constraints=constraints
+        return EfficientFrontier._optimize_weights(
+            mean_returns,
+            objective,
+            minimum_allocation,
+            maximum_allocation,
         )
 
-        if not result.success:
-            # Return equal-weight fallback
-            return {ticker: 1 / num_assets for ticker in tickers}
+    @staticmethod
+    def optimize_minimum_variance(
+        mean_returns: pd.Series,
+        cov_matrix: pd.DataFrame,
+        minimum_allocation: float = 0.05,
+        maximum_allocation: float = 1.0,
+    ) -> dict[str, float]:
+        """Find the global minimum-variance portfolio under allocation constraints."""
+        def objective(weights: np.ndarray) -> float:
+            return float(np.dot(weights.T, np.dot(cov_matrix, weights)))
 
-        return {ticker: float(w) for ticker, w in zip(tickers, result.x, strict=True)}
+        return EfficientFrontier._optimize_weights(
+            mean_returns,
+            objective,
+            minimum_allocation,
+            maximum_allocation,
+        )
+
+    @staticmethod
+    def optimize_maximum_sharpe(
+        mean_returns: pd.Series,
+        cov_matrix: pd.DataFrame,
+        risk_free_rate: float = 0.02,
+        minimum_allocation: float = 0.05,
+        maximum_allocation: float = 1.0,
+    ) -> dict[str, float]:
+        """Find the tangency (maximum Sharpe) portfolio under allocation constraints."""
+        def objective(weights: np.ndarray) -> float:
+            port_return = float(np.dot(weights, mean_returns))
+            port_var = float(np.dot(weights.T, np.dot(cov_matrix, weights)))
+            volatility = float(np.sqrt(port_var))
+            if volatility <= 1e-12:
+                return 1e6
+            sharpe = (port_return - risk_free_rate) / volatility
+            return -sharpe
+
+        return EfficientFrontier._optimize_weights(
+            mean_returns,
+            objective,
+            minimum_allocation,
+            maximum_allocation,
+        )
 
     @staticmethod
     def calculate_portfolio_metrics(
@@ -174,10 +245,8 @@ class EfficientFrontier:
         )
 
         frontier_points = []
-        sharpe_ratios = []
 
         for lam in lambdas:
-            # Optimize for this lambda
             weights = EfficientFrontier.optimize_portfolio(
                 mean_returns,
                 cov_matrix,
@@ -185,27 +254,42 @@ class EfficientFrontier:
                 minimum_allocation,
                 maximum_allocation,
             )
-
-            # Calculate metrics
-            volatility, exp_return, sharpe = EfficientFrontier.calculate_portfolio_metrics(
-                weights, mean_returns, cov_matrix, risk_free_rate
+            frontier_points.append(
+                EfficientFrontier._portfolio_point_from_weights(
+                    weights,
+                    mean_returns,
+                    cov_matrix,
+                    risk_free_rate,
+                    risk_aversion=lam,
+                )
             )
 
-            point = PortfolioPoint(
-                risk_aversion=lam,
-                volatility=volatility,
-                expected_return=exp_return,
-                sharpe_ratio=sharpe,
-                weights=weights,
-            )
-            frontier_points.append(point)
-            sharpe_ratios.append(sharpe)
+        min_var_weights = EfficientFrontier.optimize_minimum_variance(
+            mean_returns,
+            cov_matrix,
+            minimum_allocation,
+            maximum_allocation,
+        )
+        min_var = EfficientFrontier._portfolio_point_from_weights(
+            min_var_weights,
+            mean_returns,
+            cov_matrix,
+            risk_free_rate,
+        )
 
-        # Find minimum variance portfolio (highest lambda = most conservative)
-        min_var = max(frontier_points, key=lambda p: p.risk_aversion)
-
-        # Find maximum Sharpe portfolio
-        max_sharpe = max(frontier_points, key=lambda p: p.sharpe_ratio)
+        max_sharpe_weights = EfficientFrontier.optimize_maximum_sharpe(
+            mean_returns,
+            cov_matrix,
+            risk_free_rate,
+            minimum_allocation,
+            maximum_allocation,
+        )
+        max_sharpe = EfficientFrontier._portfolio_point_from_weights(
+            max_sharpe_weights,
+            mean_returns,
+            cov_matrix,
+            risk_free_rate,
+        )
 
         return EfficientFrontierResult(
             frontier_points=frontier_points,

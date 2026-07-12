@@ -1,0 +1,100 @@
+================================================================================
+REPORT FIGURES — CAPTIONS AND HOW TO USE THEM
+Folder: report_figures/
+================================================================================
+
+IMPORTANT (academic honesty)
+--------------------------------------------------------------------------------
+Your walk-forward comparative evaluation (2025-01-01 to 2026-06-01) does NOT
+show that Prophet beat naive forecasting or that Prophet+MPT beat SPY.
+
+Do NOT claim "my model is more accurate than all past works" using Figures C–E.
+Those figures report real results and should be discussed honestly.
+
+Use Figures A, B, F, G, H to argue that your *system design* is more complete
+than typical prior single-method approaches.
+
+
+================================================================================
+FIGURES THAT SUPPORT "MY WORK IS STRONGER AS A SYSTEM"
+================================================================================
+
+fig_capability_comparison.png  (Figure A)
+  Heatmap: Yes/No capability matrix vs classical MPT, ARIMA-only, Prophet-only,
+  equal-weight, and this project.
+  Caption: "Capability comparison of the proposed Prophet–MPT system against
+  typical prior approaches. The proposed system uniquely combines forecasting,
+  constrained optimisation, risk analytics, backtesting, and deployment."
+
+fig_capability_coverage.png  (Figure B)
+  Bar chart: this project implements 8/8 capabilities; others implement fewer.
+  Caption: "Capability coverage score for prior-style approaches versus the
+  integrated Prophet–MPT pipeline developed in this project."
+
+fig_method_radar.png  (Figure F)
+  Radar chart of methodological completeness.
+  Caption: "Methodological completeness radar comparing the proposed system with
+  classical historical MPT, ARIMA-only forecasting, and Prophet-only forecasting."
+
+fig_implementation_metrics.png  (Figure G)
+  Implementation validation: 288/288 tests, 67.5% coverage, 12 assets, 73 dates.
+  Caption: "Implementation validation metrics for the proposed system."
+
+fig_mu_sigma_separation.png  (Figure H)
+  Design advantage: μ from Prophet, Σ from historical returns.
+  Caption: "Design comparison showing the proposed separation of expected-return
+  estimation (μ from Prophet) and risk estimation (Σ from historical returns)."
+
+
+================================================================================
+FIGURES FROM REAL BACKTEST DATA (DISCUSS HONESTLY)
+================================================================================
+
+fig_forecast_mape_comparison.png  (Figure C)
+  Prophet MAPE 3.91% vs Naive 2.70% vs Drift 2.71%.
+  Caption: "Average price MAPE for Prophet versus naive and drift baselines over
+  the walk-forward window (n = 73). Lower is better."
+  Discussion tip: Prophet underperformed simple baselines on one-step price MAPE
+  in this period; discuss why (noise, one-day horizon, tech-heavy universe).
+
+fig_strategy_return_comparison.png  (Figure D)
+  Cumulative returns: Prophet+MPT −25.3%, Historical MPT −24.8%, EW −24.9%, SPY +31.3%.
+  Caption: "Cumulative strategy returns versus benchmarks over 2025-01-01 to
+  2026-06-01."
+  Discussion tip: Market (SPY) outperformed the concentrated tech-heavy portfolio
+  during this window; report this as a limitation, not a success claim.
+
+fig_sharpe_comparison.png  (Figure E)
+  Sharpe ratios for Prophet+MPT, historical-μ MPT, and equal-weight.
+  Caption: "Annualised Sharpe ratios of competing portfolio strategies over the
+  walk-forward evaluation period."
+
+
+================================================================================
+SUGGESTED REPORT WORDING (SAFE)
+================================================================================
+
+"Unlike prior studies that typically examine forecasting or portfolio optimisation
+in isolation, this project implements an integrated end-to-end system combining
+Prophet forecasting, constrained mean–variance optimisation, risk analytics,
+comparative evaluation, and a production dashboard (Figures A, B and F).
+
+Empirical walk-forward results (Figures C–E) show that one-step Prophet forecasts
+did not outperform naive or drift baselines on MAPE during 2025–2026, and that
+the Prophet–MPT portfolio underperformed SPY over the same window. These findings
+highlight both the value of rigorous baseline comparison and the practical
+limits of short-horizon equity forecasting in a technology-concentrated universe."
+
+
+================================================================================
+HOW TO INSERT IN LIBREOFFICE
+================================================================================
+1. Insert → Image → From File
+2. Choose the PNG from report_figures/
+3. Right-click → Insert Caption → "Figure X: ..."
+4. Place Figures A/B/F/G/H in Design/Contribution sections
+5. Place Figures C/D/E in Results/Evaluation sections
+
+================================================================================
+END
+================================================================================
