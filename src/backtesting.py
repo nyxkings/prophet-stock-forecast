@@ -9,8 +9,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.main import run_optimisation
 from src.settings import PORTFOLIO_TICKERS
+
+
+# run_optimisation is imported lazily inside Backtester.run so the Streamlit
+# dashboard (which imports evaluation → backtesting types) does not pull in
+# Prophet at import time — required for Streamlit Cloud deploys.
 
 
 @dataclass
@@ -187,6 +191,8 @@ class Backtester:
         Returns:
             BacktestSummary with performance metrics
         """
+        from src.main import run_optimisation
+
         self.results = []
 
         # Parse dates
